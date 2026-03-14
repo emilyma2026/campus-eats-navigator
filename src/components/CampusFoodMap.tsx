@@ -59,7 +59,7 @@ export default function CampusFoodMap() {
   };
 
   // Check if AMap key is set
-  const hasAMapKey = false; // Will be true when AMAP_KEY is inserted
+  const hasAMapKey = true;
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
