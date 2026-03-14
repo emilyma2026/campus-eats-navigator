@@ -17,13 +17,15 @@ const SCENES = [
 /** Deduplicate and sanitise type tags from AMap's pipe/semicolon-separated string. */
 function parseTypeTags(type: string): string[] {
   if (!type) return [];
-  const blocked = new Set(['餐饮服务', '餐饮', '食品', '美食', '其他']);
+  const blocked = new Set(['餐饮服务', '餐饮', '食品', '美食', '其他', '肯德基']);
+  // Rename awkward category names to friendlier equivalents
+  const RENAMES: Record<string, string> = { '外国餐厅': '西餐/异国料理' };
   return [
     ...new Set(
       type
         .split(';')
         .flatMap((t) => t.split('|'))
-        .map((t) => t.trim())
+        .map((t) => { const s = t.trim(); return RENAMES[s] ?? s; })
         .filter((t) => t && !blocked.has(t)),
     ),
   ].slice(0, 2);

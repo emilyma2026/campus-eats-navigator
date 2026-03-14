@@ -11,12 +11,13 @@ interface Props {
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
+      type="button"
       onClick={() => onChange(!checked)}
-      className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${checked ? 'bg-[#FFD000]' : 'bg-border'}`}
+      className={`relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0 ${checked ? 'bg-[#FFD000]' : 'bg-border'}`}
     >
       <span
-        className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform"
-        style={{ transform: checked ? 'translateX(22px)' : 'translateX(2px)' }}
+        className="absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-200"
+        style={{ transform: checked ? 'translateX(20px)' : 'translateX(0px)' }}
       />
     </button>
   );
@@ -115,7 +116,11 @@ export default function OnboardingOverlay({ onComplete }: Props) {
   const handleUpload = () => {
     if (uploading || uploadDone) return;
     setUploading(true);
-    setTimeout(() => { setUploading(false); setUploadDone(true); }, 1600);
+    setTimeout(() => {
+      setUploading(false);
+      setUploadDone(true);
+      localStorage.setItem('bb-schedule-uploaded', '1');
+    }, 1600);
   };
 
   const handleEnter = () => onComplete(username.trim() || '同学', remindMins);
@@ -134,7 +139,7 @@ export default function OnboardingOverlay({ onComplete }: Props) {
           🔔
         </motion.div>
         <h1 className="text-2xl font-black tracking-tight">Bell &amp; Bite</h1>
-        <p className="text-sm text-muted-foreground mt-1">日程驱动 · 美食决策 · 一步到位</p>
+        <p className="text-sm text-muted-foreground mt-1 text-center leading-snug">你的校园饭点专属雷达，干饭不迷路</p>
       </div>
 
       {/* ── Form body ───────────────────────────────────────────────────── */}

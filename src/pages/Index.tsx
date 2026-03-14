@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import BottomNav, { Tab } from '@/components/BottomNav';
 import DiscoveryTab from '@/components/DiscoveryTab';
@@ -6,6 +6,8 @@ import MapTab from '@/components/MapTab';
 import CommunityTab from '@/components/CommunityTab';
 import OnboardingOverlay from '@/components/OnboardingOverlay';
 import TopHeader from '@/components/TopHeader';
+import SettingsModal from '@/components/SettingsModal';
+import NotificationModal from '@/components/NotificationModal';
 import { POIRestaurant } from '@/components/AMapContainer';
 
 const FUDAN_CENTER: [number, number] = [121.5132, 31.2995];
@@ -15,8 +17,21 @@ const Index = () => {
   const [onboardingVisible, setOnboardingVisible] = useState(
     () => !localStorage.getItem('bb-onboarding-done'),
   );
-  const [username,   setUsername]   = useState(() => localStorage.getItem('bb-username')   || '');
-  const [remindMins, setRemindMins] = useState<number>(() => parseInt(localStorage.getItem('bb-remind-mins') || '30'));
+  const [username,        setUsername]        = useState(() => localStorage.getItem('bb-username')   || '');
+  const [remindMins,      setRemindMins]      = useState<number>(() => parseInt(localStorage.getItem('bb-remind-mins') || '30'));
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const [notifVisible,    setNotifVisible]    = useState(false);
+
+  // ── Mock notification: fires once per session after onboarding ──────────────
+  useEffect(() => {
+    if (onboardingVisible) return;
+    if (sessionStorage.getItem('bb-notif-shown')) return;
+    const t = setTimeout(() => {
+      setNotifVisible(true);
+      sessionStorage.setItem('bb-notif-shown', '1');
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [onboardingVisible]);
 
   const handleOnboardingComplete = useCallback((name: string, mins: number) => {
     setUsername(name);
@@ -80,7 +95,11 @@ const Index = () => {
 
       {/* Persistent top header (shown after onboarding) */}
       {!onboardingVisible && (
-        <TopHeader username={username} remindMins={remindMins} />
+        <TopHeader
+          username={username}
+          remindMins={remindMins}
+          onOpenSettings={() => setSettingsVisible(true)}
+        />
       )}
 
       {/* Tab content */}
@@ -117,6 +136,27 @@ const Index = () => {
       </div>
 
       <BottomNav activeTab={activeTab} onChange={setActiveTab} />
+
+      {/* Settings modal */}
+      {settingsVisible && (
+        <SettingsModal
+          username={username}
+          remindMins={remindMins}
+          onSave={(name, mins) => { setUsername(name); setRemindMins(mins); }}
+          onClose={() => setSettingsVisible(false)}
+        />
+      )}
+
+      {/* Mock system notification */}
+      <AnimatePresence>
+        {notifVisible && (
+          <NotificationModal
+            restaurantCount={restaurants.length > 0 ? restaurants.length : 20}
+            onGo={() => { setNotifVisible(false); setActiveTab('map'); }}
+            onDismiss={() => setNotifVisible(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Onboarding overlay with fade-out */}
       <AnimatePresence>

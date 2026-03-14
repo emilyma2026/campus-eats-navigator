@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
-  Tag, Zap, ThumbsUp, Utensils, Coffee, Star, Clock,
-  MapPin, LocateFixed, Footprints, Bike, Car, Search, X,
+  Tag, Zap, Star, Clock,
+  MapPin, LocateFixed, Footprints, Bike, Car, Search, X, Shield, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import ScheduleTimeline from './ScheduleTimeline';
 import AMapContainer, { POIRestaurant } from './AMapContainer';
@@ -13,9 +13,9 @@ import { getActiveClass, getClassStatus, CLASSES } from '@/data/scheduleData';
 type TransportMode = 'walk' | 'bike' | 'drive';
 
 const TRANSPORT: Record<TransportMode, { label: string; icon: React.ElementType; speed: number; unit: string }> = {
-  walk:  { label: '步行', icon: Footprints, speed: 80,  unit: '步行' }, // ≈3.2 km/40 min
-  bike:  { label: '骑行', icon: Bike,       speed: 250, unit: '骑行' }, // ≈7.5 km/30 min
-  drive: { label: '驾车', icon: Car,        speed: 500, unit: '驾车' }, // ≈10 km/20 min
+  walk:  { label: '步行', icon: Footprints, speed: 80,  unit: '步行' },
+  bike:  { label: '骑行', icon: Bike,       speed: 250, unit: '骑行' },
+  drive: { label: '驾车', icon: Car,        speed: 500, unit: '驾车' },
 };
 
 const MAX_TIME: Record<TransportMode, number> = {
@@ -24,12 +24,11 @@ const MAX_TIME: Record<TransportMode, number> = {
   drive: 20,
 };
 
+// 3 student-friendly filters
 const FILTERS = [
-  { label: '学生优惠', icon: Tag },
-  { label: '折扣',     icon: Zap },
-  { label: '高评分',   icon: ThumbsUp },
-  { label: '快餐',     icon: Utensils },
-  { label: '咖啡',     icon: Coffee },
+  { label: '薅羊毛', icon: Tag    }, // student deals
+  { label: '不踩雷', icon: Shield }, // rating >= 4.5
+  { label: '不用等', icon: Zap    }, // crowd != high
 ];
 
 const getDealFlags = (id: string) => {
@@ -43,7 +42,6 @@ function getCrowdInfo(id: string): { crowdLevel: CrowdLevel; waitMins: number } 
   const hour  = new Date().getHours();
   const isPeak = (hour >= 11 && hour < 13) || (hour >= 17 && hour < 19);
 
-  // During peak: slot 1-3 (min medium), off-peak: slot 0-2 (mostly low)
   const slot  = isPeak ? (hash % 3) + 1 : hash % 3;
   const crowdLevel: CrowdLevel = slot <= 1 ? 'low' : slot === 2 ? 'medium' : 'high';
   const waitMins = crowdLevel === 'low' ? 0
@@ -55,7 +53,7 @@ function getCrowdInfo(id: string): { crowdLevel: CrowdLevel; waitMins: number } 
 
 const CROWD_LABEL: Record<CrowdLevel, string> = {
   low:    '🟢 客少',
-  medium: '🟡 一般',
+  medium: '🟡 正常',
   high:   '🔴 人多',
 };
 const CROWD_CLASS: Record<CrowdLevel, string> = {
@@ -70,7 +68,6 @@ interface Props {
   onHighlightClear: () => void;
   onLocationChange?: (loc: [number, number]) => void;
   onRadiusChange?: (radiusM: number) => void;
-  /** Lift the geocoded address string up to Index → DiscoveryTab header */
   onAddressChange?: (addr: string) => void;
 }
 
@@ -82,7 +79,7 @@ export default function MapTab({
   onRadiusChange,
   onAddressChange: onAddressChangeProp,
 }: Props) {
-  const [walkTime,           setWalkTime]           = useState(10);
+  const [walkTime,           setWalkTime]           = useState(MAX_TIME['walk']); // default = max
   const [transportMode,      setTransportMode]      = useState<TransportMode>('walk');
   const [selectedId,         setSelectedId]         = useState<string | null>(null);
   const [activeFilters,      setActiveFilters]      = useState<string[]>([]);
@@ -91,10 +88,10 @@ export default function MapTab({
   const [currentAddress,     setCurrentAddress]     = useState('');
   const [searchText,         setSearchText]         = useState('');
   const [autoCompleteCenter, setAutoCompleteCenter] = useState<[number, number] | undefined>(undefined);
-  /** Incremented on slider mouse/touch-up to trigger an exact-radius API re-fetch */
-  const [sliderFetchTrigger, setSliderFetchTrigger] = useState(0);
+  /** Whether the schedule block is expanded or collapsed */
+  const [scheduleExpanded,   setScheduleExpanded]   = useState(true);
 
-  // Tick every minute to keep smart-banner fresh without extra API calls
+  // Tick every minute to keep smart-banner fresh
   const [, forceUpdate] = useState(0);
   useEffect(() => {
     const id = setInterval(() => forceUpdate((n) => n + 1), 60_000);
@@ -170,7 +167,7 @@ export default function MapTab({
   const toggleFilter = (label: string) =>
     setActiveFilters((prev) => prev.includes(label) ? prev.filter((f) => f !== label) : [...prev, label]);
 
-  // ── Enriched restaurants (crowd info computed client-side) ───────────────
+  // ── Enriched restaurants ─────────────────────────────────────────────────
   const enriched = useMemo<EnrichedRestaurant[]>(() =>
     restaurants.map((r) => ({
       ...r,
@@ -184,8 +181,9 @@ export default function MapTab({
   const filtered = useMemo(() => {
     if (!activeFilters.length) return enriched;
     return enriched.filter((r) => {
-      if (activeFilters.includes('学生优惠') && !r.studentDeal) return false;
-      if (activeFilters.includes('高评分')   && r.rating < 4)    return false;
+      if (activeFilters.includes('薅羊毛') && !r.studentDeal)         return false;
+      if (activeFilters.includes('不踩雷') && r.rating < 4.5)         return false;
+      if (activeFilters.includes('不用等') && r.crowdLevel === 'high') return false;
       return true;
     });
   }, [enriched, activeFilters]);
@@ -203,7 +201,7 @@ export default function MapTab({
           speedMPerMin={speedMPerMin}
           initialCenter={initialCenter}
           externalCenter={autoCompleteCenter}
-          triggerExactFetch={sliderFetchTrigger}
+          visiblePOIs={filtered as POIRestaurant[]}
           onPOIResults={handlePOIResults}
           onAddressChange={handleAddressChange}
           onRadiusChange={handleRadiusChange}
@@ -239,50 +237,77 @@ export default function MapTab({
           </div>
         </div>
 
-        {/* Relocated / hint badge */}
-        <div className="absolute top-16 left-1/2 -translate-x-1/2 pointer-events-none">
-          {isRelocated ? (
-            <div className="flex items-center gap-1.5 bg-[#FFD000] text-black text-[11px] font-bold px-3 py-1.5 rounded-full shadow-md whitespace-nowrap">
-              <LocateFixed size={11} /> 已切换位置 · 数据已更新
+        {/* Floating address bar — translucent, top-center below search */}
+        {currentAddress && (
+          <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+            <div className="flex items-center gap-1 bg-white/80 backdrop-blur-sm text-[11px] font-semibold text-gray-700 px-3 py-1 rounded-full shadow border border-white/60">
+              <MapPin size={9} className="text-[#FFD000] shrink-0" />
+              <span className="truncate max-w-[220px]">{currentAddress}</span>
+              {isRelocated && (
+                <span className="ml-1 flex items-center gap-0.5 text-green-600 font-bold shrink-0">
+                  <LocateFixed size={8} /> 已更新
+                </span>
+              )}
             </div>
-          ) : (
-            <div className="flex items-center gap-1.5 bg-black/50 text-white text-[11px] font-medium px-3 py-1.5 rounded-full backdrop-blur-sm whitespace-nowrap">
-              <MapPin size={11} className="text-[#FFD000]" /> 点击地图或搜索更换位置锚点
-            </div>
-          )}
-        </div>
+          </div>
+        )}
       </section>
 
       {/* ── RIGHT: Feed ────────────────────────────────────────────────────── */}
       <aside className="w-[340px] h-full bg-card border-l border-border flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto custom-scrollbar">
 
-          {/* Schedule — hidden when no classes; shows welcome card instead */}
-          {CLASSES.length === 0 ? (
-            <div className="px-4 pt-4">
-              <div className="bg-secondary rounded-2xl p-4 flex items-center gap-3">
-                <span className="text-2xl shrink-0">🌤️</span>
-                <div>
-                  <p className="text-sm font-bold">今天没有课</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">探索周边美食，随心而动 ✨</p>
+          {/* ── Schedule Section ────────────────────────────────────────── */}
+          {CLASSES.length > 0 && (
+            <div className="px-4 pt-3">
+              {/* Collapsed bar: always shows current-class status + location */}
+              <div
+                className="flex items-center justify-between cursor-pointer select-none"
+                onClick={() => setScheduleExpanded((v) => !v)}
+              >
+                <div className="min-w-0 flex-1">
+                  {classStatus.type === 'in_class' && (
+                    <p className="text-[11px] text-muted-foreground leading-tight">
+                      当前&nbsp;
+                      <span className="font-black text-foreground">{classStatus.courseName}</span>
+                      &nbsp;还有&nbsp;
+                      <span className="font-black text-[#B8860B]">{classStatus.timeLeft}分钟</span>
+                      &nbsp;下课
+                      {currentAddress && (
+                        <span className="ml-2 text-[10px] text-muted-foreground/70">
+                          · <MapPin size={8} className="inline -mt-0.5 text-[#FFD000]" /> {currentAddress.slice(0, 10)}…
+                        </span>
+                      )}
+                    </p>
+                  )}
+                  {classStatus.type === 'next_class' && (
+                    <p className="text-[11px] text-muted-foreground leading-tight">
+                      下一节&nbsp;
+                      <span className="font-black text-foreground">{classStatus.courseName}</span>
+                      &nbsp;{classStatus.timeUntil}min后
+                    </p>
+                  )}
+                  {classStatus.type === 'done' && (
+                    <p className="text-[11px] text-muted-foreground">今日课程已结束</p>
+                  )}
                 </div>
+                <button className="ml-2 text-muted-foreground hover:text-foreground shrink-0">
+                  {scheduleExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
               </div>
-            </div>
-          ) : (
-            <>
-              {/* Active-class campus tag */}
-              {activeClass && (
-                <div className="px-4 pt-3 pb-0">
-                  <div className="flex items-center gap-1.5 text-xs font-bold bg-[#FFD000]/10 text-[#6B4C00] px-3 py-1.5 rounded-full w-fit">
-                    <MapPin size={11} /> 当前课堂：{activeClass.campus}
-                  </div>
+
+              {/* Expanded: full timeline */}
+              {scheduleExpanded && (
+                <div className="pt-2">
+                  {activeClass && (
+                    <div className="flex items-center gap-1.5 text-xs font-bold bg-[#FFD000]/10 text-[#6B4C00] px-3 py-1.5 rounded-full w-fit mb-2">
+                      <MapPin size={11} /> 当前课堂：{activeClass.campus}
+                    </div>
+                  )}
+                  <ScheduleTimeline isRelocated={isRelocated} />
                 </div>
               )}
-              {/* Schedule */}
-              <div className="px-4 pt-3">
-                <ScheduleTimeline isRelocated={isRelocated} />
-              </div>
-            </>
+            </div>
           )}
 
           {/* ── Smart Decision Banner ─────────────────────────────────────── */}
@@ -352,8 +377,6 @@ export default function MapTab({
             <input
               type="range" min="1" max={MAX_TIME[transportMode]} value={walkTime}
               onChange={(e) => { setWalkTime(parseInt(e.target.value)); setSelectedId(null); }}
-              onMouseUp={() => setSliderFetchTrigger((n) => n + 1)}
-              onTouchEnd={() => setSliderFetchTrigger((n) => n + 1)}
               className="w-full cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
@@ -385,35 +408,49 @@ export default function MapTab({
               下课吃什么 · <span className="text-foreground">{filtered.length}</span> 家
             </p>
             <div className="space-y-2">
-              {filtered.sort((a, b) => a.walkMins - b.walkMins).map((r) => {
+              {filtered.sort((a, b) => a.walkMins - b.walkMins).map((r, idx) => {
                 const isSel = selectedId === r.id;
                 return (
-                  <button key={r.id}
-                    onClick={() => setSelectedId((prev) => prev === r.id ? null : r.id)}
+                  <button
+                    key={r.id}
                     className={`w-full text-left p-3 rounded-2xl transition-all border ${
                       isSel ? 'bg-[#FFD000]/5 border-[#FFD000]/50 shadow-elevated' : 'bg-card border-border shadow-card hover:shadow-elevated'
                     }`}
+                    onClick={() => setSelectedId((prev) => prev === r.id ? null : r.id)}
                   >
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-2">
+                      {/* Rank badge */}
+                      <div className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black shrink-0 ${
+                        idx === 0 ? 'bg-[#FFD000] text-black' :
+                        idx === 1 ? 'bg-slate-200 text-slate-600' :
+                        idx === 2 ? 'bg-amber-100 text-amber-700' :
+                        'bg-muted text-muted-foreground'
+                      }`}>{idx + 1}</div>
+
+                      {/* Name + address */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold truncate">{r.name}</p>
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">{r.address}</p>
+                        <p className="text-sm font-bold truncate leading-tight">{r.name}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{r.address}</p>
                       </div>
-                      <div className="flex flex-col items-end gap-1 ml-3 shrink-0">
-                        <div className="flex items-center gap-0.5">
-                          <Star size={11} fill="#FFD000" className="text-[#FFD000]" />
-                          <span className="text-xs font-bold">{r.rating.toFixed(1)}</span>
+
+                      {/* Right meta — single compact column */}
+                      <div className="flex flex-col items-end gap-0.5 ml-1 shrink-0">
+                        <div className="flex items-center gap-1">
+                          <Star size={10} fill="#FFD000" className="text-[#FFD000]" />
+                          <span className="text-[11px] font-bold">{r.rating.toFixed(1)}</span>
+                          <span className="text-[10px] text-orange-500 font-bold tabular-nums">
+                            <Clock size={9} className="inline -mt-0.5" /> {r.walkMins}min
+                          </span>
                         </div>
-                        <span className="flex items-center gap-1 text-xs text-orange-500 font-bold">
-                          <Clock size={10} /> {r.walkMins}min
-                        </span>
-                        {/* Crowd badge */}
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${CROWD_CLASS[r.crowdLevel]}`}>
-                          {CROWD_LABEL[r.crowdLevel]}
-                        </span>
-                        {r.studentDeal && (
-                          <span className="text-[10px] font-bold bg-[#FFD000] text-black px-1.5 py-0.5 rounded">学生价</span>
-                        )}
+                        {/* Tags on one row */}
+                        <div className="flex items-center gap-1 flex-wrap justify-end">
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${CROWD_CLASS[r.crowdLevel]}`}>
+                            {CROWD_LABEL[r.crowdLevel]}
+                          </span>
+                          {r.studentDeal && (
+                            <span className="text-[10px] font-bold bg-[#FFD000] text-black px-1.5 py-0.5 rounded">学生价</span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </button>

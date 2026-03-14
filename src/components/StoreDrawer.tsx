@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Star, Clock, Tag, MapPin, ExternalLink, Navigation, AlertTriangle, Camera } from 'lucide-react';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 import MeituanLogo from './MeituanLogo';
@@ -8,6 +8,8 @@ export type CrowdLevel = 'low' | 'medium' | 'high';
 export interface EnrichedRestaurant {
   id: string;
   name: string;
+  lng: number;
+  lat: number;
   rating: number;
   address: string;
   type: string;
@@ -39,6 +41,9 @@ const PITFALL_TIPS = [
 const PHOTO_COLORS = ['#FFE28A', '#FFCBA4', '#B5EAD7', '#C7CEEA', '#FFDAC1', '#E2F0CB'];
 
 export default function StoreDrawer({ restaurant, onClose }: Props) {
+  const [selectedMode, setSelectedMode] = useState<'delivery' | 'dine' | null>(null);
+  const remindMins = parseInt(localStorage.getItem('bb-remind-mins') || '30');
+
   return (
     <Drawer open={!!restaurant} onOpenChange={(open) => !open && onClose()}>
       <DrawerContent className="max-h-[75vh]">
@@ -88,7 +93,7 @@ export default function StoreDrawer({ restaurant, onClose }: Props) {
                   restaurant.crowdLevel === 'medium' ? 'text-yellow-700' : 'text-red-700'
                 }`}>
                   {restaurant.crowdLevel === 'low'    ? '客流稀少 · 随时可去'  :
-                   restaurant.crowdLevel === 'medium' ? '人流一般 · 无需等位'  : '人流较多 · 需要等位'}
+                   restaurant.crowdLevel === 'medium' ? '人流正常 · 无需等位'  : '人流较多 · 需要等位'}
                 </p>
                 <p className={`text-[11px] mt-0.5 ${
                   restaurant.crowdLevel === 'low'    ? 'text-green-600'  :
@@ -175,6 +180,45 @@ export default function StoreDrawer({ restaurant, onClose }: Props) {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* ── Delivery / Dine-in Mode Selector ─────────────────────── */}
+            <div className="flex gap-3 mb-4">
+              {/* 外卖 */}
+              <button
+                onClick={() => setSelectedMode(prev => prev === 'delivery' ? null : 'delivery')}
+                className={`flex-1 py-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-0.5 ${
+                  selectedMode === 'delivery'
+                    ? 'bg-[#FFD000] border-[#FFD000] text-black shadow-md'
+                    : 'bg-card border-border text-foreground hover:border-[#FFD000]/60 hover:bg-[#FFD000]/5'
+                }`}
+              >
+                <span className="text-base leading-none">🛵</span>
+                <span className="text-xs font-black leading-none mt-1">外卖</span>
+                {selectedMode === 'delivery' && (
+                  <span className="text-[10px] font-semibold mt-0.5 opacity-80">
+                    约 {remindMins} 分钟送达
+                  </span>
+                )}
+              </button>
+
+              {/* 堂食 */}
+              <button
+                onClick={() => setSelectedMode(prev => prev === 'dine' ? null : 'dine')}
+                className={`flex-1 py-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-0.5 ${
+                  selectedMode === 'dine'
+                    ? 'bg-[#FFD000] border-[#FFD000] text-black shadow-md'
+                    : 'bg-card border-border text-foreground hover:border-[#FFD000]/60 hover:bg-[#FFD000]/5'
+                }`}
+              >
+                <span className="text-base leading-none">🍽️</span>
+                <span className="text-xs font-black leading-none mt-1">堂食</span>
+                {selectedMode === 'dine' && restaurant && (
+                  <span className="text-[10px] font-semibold mt-0.5 opacity-80">
+                    步行 {restaurant.walkMins} 分钟
+                  </span>
+                )}
+              </button>
             </div>
 
             {/* CTA */}

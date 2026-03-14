@@ -39,10 +39,15 @@ export const CLASSES: ClassBlock[] = [
   },
 ];
 
-// ── Real-time clock (updates on every call) ──────────────────────────────────
-function curMins(): number {
-  const now = new Date();
-  return now.getHours() * 60 + now.getMinutes();
+/**
+ * Demo mode: always returns 12:00 (720 minutes since midnight).
+ * This places the cursor 30 min before 市场营销 ends (12:30),
+ * so the "下课提醒" banner always fires. Do NOT use real system time.
+ *
+ * Export this so ScheduleTimeline can use it for the red cursor line.
+ */
+export function curMins(): number {
+  return 720; // Fixed demo: 12:00 PM
 }
 
 // ── Basic helpers ─────────────────────────────────────────────────────────────
@@ -81,7 +86,7 @@ export interface ClassStatus {
 }
 
 /**
- * Returns the current schedule state based on real system time.
+ * Returns the current schedule state based on demo time (12:00 PM).
  *
  * in_class  → "当前 [name] 还有 [N] 分钟下课"
  * next_class → "下一节 [name] 还有 [N] 分钟上课"

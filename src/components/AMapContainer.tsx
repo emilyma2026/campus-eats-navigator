@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback, useState } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 
 export interface POIRestaurant {
   id: string;
@@ -16,8 +16,8 @@ interface AMapContainerProps {
   speedMPerMin?: number;             // 80 walk | 250 bike | 500 drive
   initialCenter?: [number, number];
   externalCenter?: [number, number]; // pushed in from search bar / AutoComplete
-  /** Increment to trigger a fresh API fetch at the exact current radius (slider drag-end) */
-  triggerExactFetch?: number;
+  /** Sidebar-filtered POI list; markers always mirror this set */
+  visiblePOIs?: POIRestaurant[];
   onPOIResults: (restaurants: POIRestaurant[]) => void;
   onAddressChange?: (addr: string) => void;
   onRadiusChange?: (radiusM: number) => void;
@@ -35,12 +35,32 @@ function maxFetchRadius(speed: number): number {
   return 10000;                    // drive ≤20 min @ 500 m/min → 10 km
 }
 
+/** Compute ideal map zoom for a given radius so the circle fits the viewport. */
+function radiusToZoom(radiusM: number): number {
+  const zoom = Math.round(16 - Math.log2(Math.max(radiusM, 100) / 100));
+  return Math.min(17, Math.max(11, zoom));
+}
+
+/** Remove restaurants within 50 m of each other (same-mall dedup). */
+function dedupByProximity(pois: POIRestaurant[]): POIRestaurant[] {
+  const kept: POIRestaurant[] = [];
+  for (const poi of pois) {
+    const tooClose = kept.some((k) => {
+      const dx = (k.lng - poi.lng) * 111000 * Math.cos(poi.lat * Math.PI / 180);
+      const dy = (k.lat - poi.lat) * 111000;
+      return Math.sqrt(dx * dx + dy * dy) < 50;
+    });
+    if (!tooClose) kept.push(poi);
+  }
+  return kept;
+}
+
 export default function AMapContainer({
   walkTime,
   speedMPerMin = 80,
   initialCenter,
   externalCenter,
-  triggerExactFetch,
+  visiblePOIs,
   onPOIResults,
   onAddressChange,
   onRadiusChange,
@@ -48,8 +68,6 @@ export default function AMapContainer({
   onPinClick,
   onLocationChange,
 }: AMapContainerProps) {
-  const [centerLabel, setCenterLabel] = useState('');
-
   const mapRef            = useRef<HTMLDivElement>(null);
   const mapInstanceRef    = useRef<any>(null);
   const markersRef        = useRef<any[]>([]);
@@ -66,7 +84,8 @@ export default function AMapContainer({
   const searchCenterRef        = useRef<[number, number]>(mountCenter.current);
   const selectedIdRef          = useRef<string | null>(selectedId);
   const allPoisRef             = useRef<POIRestaurant[]>([]);
-  const lastFilteredRef        = useRef<POIRestaurant[]>([]);
+  /** Tracks the POI list currently rendered as markers (matches sidebar). */
+  const currentMarkersRef      = useRef<POIRestaurant[]>([]);
   const onPinClickRef          = useRef(onPinClick);
   const onLocationChangeRef    = useRef(onLocationChange);
   const onPOIResultsRef        = useRef(onPOIResults);
@@ -108,43 +127,40 @@ export default function AMapContainer({
     }
   }, []);
 
-  // ── Geocode current center → emit human-readable address + seed floating label ─
+  // ── Geocode current center → emit human-readable address ─────────────────
   const geocodeCenter = useCallback((center: [number, number]) => {
     if (!geocoderRef.current) return;
     geocoderRef.current.getAddress(center, (status: string, result: any) => {
       if (status === 'complete' && result.regeocode) {
         const raw: string = result.regeocode.formattedAddress || '';
-        // Strip country / province prefix for concise display
         const addr = raw.replace(/^中国(上海市?)?/, '').replace(/^上海市?/, '');
         onAddressChangeRef.current?.(addr || raw);
-        // Seed floating center label: prefer nearest POI name, fallback to short addr
-        const poi0 = result.regeocode.pois?.[0]?.name as string | undefined;
-        const short = poi0 || addr.split('·').pop()?.trim() || addr.slice(0, 12);
-        setCenterLabel(short || addr);
       }
     });
-  }, [setCenterLabel]);
+  }, []);
 
-  // ── Marker rendering ─────────────────────────────────────────────────────
+  // ── Marker rendering — dot-only pins (no text label) ─────────────────────
   const updateMarkers = useCallback((map: any, pois: POIRestaurant[]) => {
-    lastFilteredRef.current = pois;
+    currentMarkersRef.current = pois;
     markersRef.current.forEach((m) => map.remove(m));
     markersRef.current = [];
 
     pois.forEach((r) => {
       const isSel = selectedIdRef.current === r.id;
-      const mins  = Math.max(1, Math.round(r.distance / speedRef.current));
       const marker = new window.AMap.Marker({
         position: [r.lng, r.lat],
         content: `<div style="
           background:${isSel ? '#FF7A00' : '#FFD000'};
-          color:#000; padding:2px 8px; border-radius:12px; font-size:12px; font-weight:700;
-          box-shadow:0 2px 8px rgba(0,0,0,0.18); white-space:nowrap; cursor:pointer;
-          transform:${isSel ? 'scale(1.25)' : 'scale(1)'};
-          border:${isSel ? '2px solid white' : '1.5px solid rgba(0,0,0,0.1)'};
+          width:${isSel ? '14px' : '10px'};
+          height:${isSel ? '14px' : '10px'};
+          border-radius:50%;
+          border:${isSel ? '2.5px solid white' : '2px solid rgba(255,255,255,0.85)'};
+          box-shadow:0 2px 8px rgba(0,0,0,0.22);
+          cursor:pointer;
           animation:bb-marker-in 0.18s ease;
-        ">🕒${mins}min</div>`,
-        offset: new window.AMap.Pixel(-20, -10),
+          transition:transform 0.15s;
+        "></div>`,
+        offset: new window.AMap.Pixel(isSel ? -7 : -5, isSel ? -7 : -5),
         zIndex: isSel ? 150 : 100,
       });
       (marker as any)._poiId = r.id;
@@ -155,86 +171,112 @@ export default function AMapContainer({
   }, []);
 
   // ── LOCAL filter: instant, reads cached allPoisRef (no API call) ─────────
+  // Only updates circle + emits filtered list to sidebar; markers handled by visiblePOIs effect.
   const applyFilter = useCallback(() => {
     if (!mapInstanceRef.current || allPoisRef.current.length === 0) return;
     const radius   = Math.max(walkTimeRef.current * speedRef.current, 100);
     const filtered = allPoisRef.current.filter((p) => p.distance <= radius);
     onPOIResultsRef.current(filtered);
-    updateMarkers(mapInstanceRef.current, filtered);
     updateCircle(mapInstanceRef.current, searchCenterRef.current);
-  }, [updateMarkers, updateCircle]);
+  }, [updateCircle]);
 
-  // ── API FETCH: called on center change or transport mode change ───────────
+  // ── POI parser helper ─────────────────────────────────────────────────────
+  const parsePOIs = useCallback((pois: any[], seen: Set<string>): POIRestaurant[] =>
+    pois
+      .filter((poi: any) => {
+        // Stage 1 crash fix: skip POIs where location or either coordinate is null/undefined/falsy
+        if (!poi.location || poi.location.lng == null || poi.location.lat == null) return false;
+        if (seen.has(poi.id)) return false;
+        seen.add(poi.id);
+        return true;
+      })
+      .map((poi: any) => ({
+        id:       poi.id,
+        name:     poi.name,
+        lng:      poi.location.lng,
+        lat:      poi.location.lat,
+        rating:   poi.biz_ext?.rating ? parseFloat(poi.biz_ext.rating) : 3.5 + Math.random() * 1.5,
+        address:  poi.address || '',
+        type:     poi.type || '',
+        distance: poi.distance ? parseInt(poi.distance) : 0,
+      })),
+  []);
+
+  // ── API FETCH: multi-center strategy for geographic spread ──────────────
+  // 5 parallel searches (original + 4 offsets ~1.5 km away) give 40+ restaurants
+  // distributed across the full 3.2 km walk radius instead of clustering at
+  // the nearest commercial street.
   const fetchFromAPI = useCallback((map: any, center: [number, number]) => {
     if (!window.AMap || !searchRef.current) return;
     const fetchRadius = maxFetchRadius(speedRef.current);
+    const seen        = new Set<string>();
 
-    searchRef.current.searchNearBy('餐饮', center, fetchRadius, (status: string, result: any) => {
-      if (status === 'complete' && result.poiList) {
-        const seen = new Set<string>();
-        const pois: POIRestaurant[] = result.poiList.pois
-          .filter((poi: any) => { if (seen.has(poi.id)) return false; seen.add(poi.id); return true; })
-          .map((poi: any) => ({
-            id:       poi.id,
-            name:     poi.name,
-            lng:      poi.location.lng,
-            lat:      poi.location.lat,
-            rating:   poi.biz_ext?.rating ? parseFloat(poi.biz_ext.rating) : 3.5 + Math.random() * 1.5,
-            address:  poi.address || '',
-            type:     poi.type || '',
-            distance: poi.distance ? parseInt(poi.distance) : 0,
-          }));
+    /** Haversine distance (m) from a POI back to the original search center */
+    const distFrom = (lng: number, lat: number): number => {
+      const toRad = (d: number) => d * Math.PI / 180;
+      const R = 6371000;
+      const dLat = toRad(lat - center[1]);
+      const dLng = toRad(lng - center[0]);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(center[1])) * Math.cos(toRad(lat)) * Math.sin(dLng / 2) ** 2;
+      return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+    };
 
-        allPoisRef.current = pois;
+    // ~1.0 km offsets — near enough to cover the 5-15 min gap left by the
+    // dense-mall main search, yet far enough to add new restaurants beyond it.
+    const dLat = 0.009, dLng = 0.011; // ~1.0 km at Shanghai's latitude
+    const configs: Array<{ c: [number, number]; r: number; ps: number }> = [
+      { c: center,                                        r: fetchRadius, ps: 50 }, // main (nearest 50)
+      { c: [center[0],        center[1] + dLat],         r: 1600,        ps: 20 }, // N
+      { c: [center[0] + dLng, center[1]        ],        r: 1600,        ps: 20 }, // E
+      { c: [center[0],        center[1] - dLat],         r: 1600,        ps: 20 }, // S
+      { c: [center[0] - dLng, center[1]        ],        r: 1600,        ps: 20 }, // W
+    ];
 
-        const radius   = Math.max(walkTimeRef.current * speedRef.current, 100);
-        const filtered = pois.filter((p) => p.distance <= radius);
-        onPOIResultsRef.current(filtered);
-        updateMarkers(map, filtered);
-        updateCircle(map, center);
-        geocodeCenter(center);
-      }
+    let accumulated: POIRestaurant[] = [];
+    let pending = configs.length;
+
+    const onDone = () => {
+      if (--pending > 0) return;
+      // Sort by distance from original center and dedup by proximity
+      accumulated.sort((a, b) => a.distance - b.distance);
+      accumulated = dedupByProximity(accumulated);
+      allPoisRef.current = accumulated;
+      const radius   = Math.max(walkTimeRef.current * speedRef.current, 100);
+      const filtered = accumulated.filter((p) => p.distance <= radius);
+      onPOIResultsRef.current(filtered);
+      updateCircle(map, center);
+      geocodeCenter(center);
+    };
+
+    configs.forEach(({ c, r, ps }, i) => {
+      // Reuse the pre-created search instance for the main fetch; new instance for offsets
+      const s = i === 0
+        ? searchRef.current
+        : new window.AMap.PlaceSearch({ type: '餐饮服务', pageSize: ps, extensions: 'all', autoFitView: false });
+
+      s.searchNearBy('餐饮', c, r, (status: string, result: any) => {
+        if (status === 'complete' && result.poiList) {
+          parsePOIs(result.poiList.pois, seen).forEach((poi) => {
+            poi.distance = distFrom(poi.lng, poi.lat); // recalc from original center
+            accumulated.push(poi);
+          });
+        }
+        onDone();
+      });
     });
-  }, [updateMarkers, updateCircle, geocodeCenter]);
+  }, [updateCircle, geocodeCenter, parsePOIs]);
 
-  // ── EXACT FETCH: slider drag-end → fresh API call at precise radius ─────
-  const fetchExact = useCallback((map: any, center: [number, number]) => {
-    if (!window.AMap || !searchRef.current) return;
-    const radiusM = Math.max(walkTimeRef.current * speedRef.current, 100);
-    searchRef.current.searchNearBy('餐饮', center, radiusM, (status: string, result: any) => {
-      if (status === 'complete' && result.poiList) {
-        const seen2 = new Set<string>();
-        const pois: POIRestaurant[] = result.poiList.pois
-          .filter((poi: any) => { if (seen2.has(poi.id)) return false; seen2.add(poi.id); return true; })
-          .map((poi: any) => ({
-            id:       poi.id,
-            name:     poi.name,
-            lng:      poi.location.lng,
-            lat:      poi.location.lat,
-            rating:   poi.biz_ext?.rating ? parseFloat(poi.biz_ext.rating) : 3.5 + Math.random() * 1.5,
-            address:  poi.address || '',
-            type:     poi.type || '',
-            distance: poi.distance ? parseInt(poi.distance) : 0,
-          }));
-        // Results already scoped to exact radius – update cache, clear & redraw markers
-        allPoisRef.current = pois;
-        onPOIResultsRef.current(pois);
-        updateMarkers(map, pois);
-        updateCircle(map, center);
-      }
-    });
-  }, [updateMarkers, updateCircle]);
-
-  // ── Reactive: triggerExactFetch counter → precision re-fetch on drag-end ─
-  useEffect(() => {
-    if (!triggerExactFetch || !mapInstanceRef.current) return;
-    fetchExact(mapInstanceRef.current, searchCenterRef.current);
-  }, [triggerExactFetch, fetchExact]);
-
-  // ── Reactive: walkTime slider → instant LOCAL filter + update circle ──────
+  // ── Reactive: walkTime slider → instant LOCAL filter + update circle + zoom ──
   useEffect(() => {
     applyFilter();
-  }, [walkTime, applyFilter]);
+    // Auto-zoom: smoothly zoom map to match the walk radius
+    if (mapInstanceRef.current) {
+      const radiusM = Math.max(walkTime * speedMPerMin, 100);
+      mapInstanceRef.current.setZoom(radiusToZoom(radiusM), true);
+    }
+  }, [walkTime, speedMPerMin, applyFilter]);
 
   // ── Reactive: transport mode change → re-fetch ───────────────────────────
   useEffect(() => {
@@ -255,6 +297,25 @@ export default function AMapContainer({
     onLocationChangeRef.current?.(externalCenter);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalCenter]);
+
+  // ── Reactive: visiblePOIs → keep map markers in sync with sidebar list ────
+  useEffect(() => {
+    if (!mapInstanceRef.current || !visiblePOIs) return;
+    updateMarkers(mapInstanceRef.current, visiblePOIs);
+  }, [visiblePOIs, updateMarkers]);
+
+  // ── Re-render markers to update selected-state highlight + pan ───────────
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    const pois = currentMarkersRef.current;
+    if (pois.length > 0) {
+      updateMarkers(mapInstanceRef.current, pois);
+    }
+    if (selectedId) {
+      const m = markersRef.current.find((mk) => mk._poiId === selectedId);
+      if (m) mapInstanceRef.current.panTo(m.getPosition());
+    }
+  }, [selectedId, updateMarkers]);
 
   // ── User anchor pin with ripple ──────────────────────────────────────────
   const placeUserPin = useCallback((map: any, loc: [number, number]) => {
@@ -297,7 +358,9 @@ export default function AMapContainer({
     const center = mountCenter.current;
 
     const map = new window.AMap.Map(mapRef.current, {
-      zoom: 16, center, mapStyle: 'amap://styles/light',
+      zoom: 15, center, mapStyle: 'amap://styles/light',
+      // Remove POI address labels from the map surface for a cleaner look
+      features: ['bg', 'road', 'building'],
     });
     mapInstanceRef.current = map;
 
@@ -312,8 +375,9 @@ export default function AMapContainer({
       zIndex: 200,
     }));
 
+    // Page 1 with pageSize 50; page 2 is fetched dynamically in fetchFromAPI
     searchRef.current = new window.AMap.PlaceSearch({
-      type: '餐饮服务', pageSize: 20, pageIndex: 1, extensions: 'all', autoFitView: true,
+      type: '餐饮服务', pageSize: 50, pageIndex: 1, extensions: 'all', autoFitView: false,
     });
 
     // Geocoder – use pre-loaded plugin or lazy-load fallback
@@ -338,7 +402,7 @@ export default function AMapContainer({
       onLocationChangeRef.current?.(nl);
     });
 
-    // Map pan → update floating center label (debounced, no API search call)
+    // Map pan → update address label (debounced, no API search call)
     map.on('moveend', () => {
       if (moveDebounceRef.current) clearTimeout(moveDebounceRef.current);
       moveDebounceRef.current = setTimeout(() => {
@@ -350,9 +414,7 @@ export default function AMapContainer({
             if (status === 'complete' && result.regeocode) {
               const raw: string = result.regeocode.formattedAddress || '';
               const addr = raw.replace(/^中国(上海市?)?/, '').replace(/^上海市?/, '');
-              const poi0 = result.regeocode.pois?.[0]?.name as string | undefined;
-              const short = poi0 || addr.split('·').pop()?.trim() || addr.slice(0, 12);
-              setCenterLabel(short || addr);
+              onAddressChangeRef.current?.(addr || raw);
             }
           },
         );
@@ -364,18 +426,6 @@ export default function AMapContainer({
       mapInstanceRef.current?.destroy();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Re-render markers + pan to selected pin ───────────────────────────────
-  useEffect(() => {
-    if (!mapInstanceRef.current) return;
-    if (lastFilteredRef.current.length > 0) {
-      updateMarkers(mapInstanceRef.current, lastFilteredRef.current);
-    }
-    if (selectedId) {
-      const m = markersRef.current.find((mk) => mk._poiId === selectedId);
-      if (m) mapInstanceRef.current.panTo(m.getPosition());
-    }
-  }, [selectedId, updateMarkers]);
 
   return (
     <>
@@ -389,21 +439,6 @@ export default function AMapContainer({
         .amap-sug-result { z-index:9999 !important; }
       `}</style>
       <div ref={mapRef} className="absolute inset-0" />
-
-      {/* ── Floating location label — glassmorphism bar below search bar ── */}
-      {centerLabel && (
-        <div
-          className="absolute pointer-events-none z-10"
-          style={{ top: '57px', left: '12px', right: '12px' }}
-        >
-          <div className="flex justify-center">
-            <div className="inline-flex items-center gap-1.5 bg-white/80 backdrop-blur-md text-gray-800 text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg border border-white/60 max-w-[240px]">
-              <span className="text-[#B8860B] shrink-0 leading-none">📍</span>
-              <span className="truncate">{centerLabel}</span>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

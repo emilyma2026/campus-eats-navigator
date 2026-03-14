@@ -1,9 +1,10 @@
 import React from 'react';
-import { Bell } from 'lucide-react';
+import { Bell, Settings } from 'lucide-react'; // v2
 
 interface Props {
   username: string;
   remindMins: number;
+  onOpenSettings?: () => void;
 }
 
 function formatTime(mins: number): string {
@@ -12,7 +13,7 @@ function formatTime(mins: number): string {
   return `${mins}分`;
 }
 
-export default function TopHeader({ username, remindMins }: Props) {
+export default function TopHeader({ username, remindMins, onOpenSettings }: Props) {
   return (
     <header className="flex items-center justify-between px-4 py-2 bg-card/95 backdrop-blur-sm border-b border-border shrink-0 z-20">
 
@@ -36,6 +37,13 @@ export default function TopHeader({ username, remindMins }: Props) {
         <span className="text-sm font-semibold text-foreground truncate max-w-[80px]">
           👋&nbsp;{username || '同学'}
         </span>
+        <button
+          onClick={onOpenSettings}
+          className="w-7 h-7 flex items-center justify-center rounded-full bg-secondary hover:bg-border transition-colors shrink-0"
+          aria-label="设置"
+        >
+          <Settings size={13} className="text-muted-foreground" />
+        </button>
       </div>
     </header>
   );

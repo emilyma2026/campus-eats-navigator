@@ -1,18 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   CLASSES,
   getActiveClass,
   getClassStatus,
+  curMins,
 } from '@/data/scheduleData';
 import { MapPin } from 'lucide-react';
 
-const TIMELINE_START = 8;
-const TIMELINE_END   = 20;
+// Crop the visible timeline to 9:00 AM – 5:00 PM for demo clarity
+const TIMELINE_START = 9;
+const TIMELINE_END   = 17;
 const TOTAL_HOURS    = TIMELINE_END - TIMELINE_START;
-const CANVAS_H       = 220; // px
+const CANVAS_H       = 200; // px
 
 function timeToPercent(hour: number, min: number) {
-  return ((hour - TIMELINE_START) * 60 + min) / (TOTAL_HOURS * 60) * 100;
+  const pct = ((hour - TIMELINE_START) * 60 + min) / (TOTAL_HOURS * 60) * 100;
+  return Math.max(0, Math.min(100, pct)); // clamp so out-of-range classes don't overflow
 }
 
 interface Props {
@@ -20,17 +23,14 @@ interface Props {
 }
 
 export default function ScheduleTimeline({ isRelocated = false }: Props) {
-  // Live clock – updates every 30 s so the red line tracks real time
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(id);
-  }, []);
+  // Use fixed demo time (12:00) — no interval needed; time is static
+  const nowMins        = curMins(); // always 720 (12:00 PM)
+  const nowHour        = Math.floor(nowMins / 60);
+  const nowMin         = nowMins % 60;
+  const currentPercent = timeToPercent(nowHour, nowMin);
 
-  const hours          = Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => TIMELINE_START + i);
-  const currentPercent = timeToPercent(now.getHours(), now.getMinutes());
+  const hours = Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => TIMELINE_START + i);
 
-  // Re-evaluate on every render (clock updates state, so this stays fresh)
   const activeClass = getActiveClass();
   const status      = getClassStatus();
 
@@ -62,6 +62,7 @@ export default function ScheduleTimeline({ isRelocated = false }: Props) {
           const top    = timeToPercent(cls.startHour, cls.startMin);
           const bottom = timeToPercent(cls.endHour,   cls.endMin);
           const height = bottom - top;
+          if (height <= 0) return null; // fully outside 9-17 range
           const isActive = activeClass?.name === cls.name;
           const blockPx  = (height / 100) * CANVAS_H;
 
@@ -73,7 +74,7 @@ export default function ScheduleTimeline({ isRelocated = false }: Props) {
               }`}
               style={{ top: `${top}%`, height: `${height}%`, backgroundColor: cls.color }}
             >
-              {/* Campus tag – prominent top strip */}
+              {/* Campus tag */}
               <div className="flex items-center gap-0.5 px-2 pt-1 pb-0 shrink-0">
                 <MapPin size={8} className="text-black/70 shrink-0" />
                 <span className="text-[9px] font-black text-black/75 truncate leading-none">
@@ -86,7 +87,7 @@ export default function ScheduleTimeline({ isRelocated = false }: Props) {
                 )}
               </div>
 
-              {/* Course name + time — flexible min-height, always line-clamp-2 */}
+              {/* Course name + time */}
               {blockPx >= 20 && (
                 <div
                   className="px-2 pb-1 flex-1 flex flex-col justify-center overflow-hidden"
@@ -115,7 +116,7 @@ export default function ScheduleTimeline({ isRelocated = false }: Props) {
           );
         })}
 
-        {/* ── Red current-time line (tracks real system clock) ────────── */}
+        {/* ── Red current-time line (fixed demo 12:00) ────────────────── */}
         <div
           className="absolute left-9 right-0 flex items-center z-10"
           style={{ top: `${currentPercent}%` }}
@@ -125,35 +126,8 @@ export default function ScheduleTimeline({ isRelocated = false }: Props) {
         </div>
       </div>
 
-      {/* ── Footer: rich dynamic status copy ──────────────────────────── */}
-      <div className="mt-2 flex items-center justify-between border-t border-border pt-2 gap-2">
-
-        {/* Left: class status with bold course name and time */}
-        <div className="min-w-0 flex-1">
-          {status.type === 'in_class' && (
-            <p className="text-[11px] text-muted-foreground leading-tight">
-              当前&nbsp;
-              <span className="font-black text-foreground">{status.courseName}</span>
-              &nbsp;还有&nbsp;
-              <span className="font-black text-[#B8860B]">{status.timeLeft}分钟</span>
-              &nbsp;下课
-            </p>
-          )}
-          {status.type === 'next_class' && (
-            <p className="text-[11px] text-muted-foreground leading-tight">
-              下一节&nbsp;
-              <span className="font-black text-foreground">{status.courseName}</span>
-              &nbsp;还有&nbsp;
-              <span className="font-black text-[#B8860B]">{status.timeUntil}分钟</span>
-              &nbsp;上课
-            </p>
-          )}
-          {status.type === 'done' && (
-            <p className="text-[11px] text-muted-foreground">今日课程已结束</p>
-          )}
-        </div>
-
-        {/* Right: campus / anchor location */}
+      {/* ── Footer: campus / anchor location ──────────────────────────── */}
+      <div className="mt-2 flex items-center justify-end border-t border-border pt-2">
         <span className={`flex items-center gap-1 shrink-0 text-[11px] transition-colors ${
           isRelocated ? 'text-[#B8860B] font-semibold' : 'text-muted-foreground'
         }`}>
