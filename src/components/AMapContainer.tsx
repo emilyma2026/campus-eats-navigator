@@ -223,15 +223,20 @@ export default function AMapContainer({
       return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
     };
 
-    // ~1.0 km offsets — near enough to cover the 5-15 min gap left by the
-    // dense-mall main search, yet far enough to add new restaurants beyond it.
-    const dLat = 0.009, dLng = 0.011; // ~1.0 km at Shanghai's latitude
+    // 8 offset searches + 1 main: outer ring (~2 km) for 20-40 min coverage,
+    // mid ring (~1 km) to fill the 10-20 min gap.
+    const oFar = { lat: 0.018, lng: 0.022 }; // ~2.0 km at Shanghai latitude
+    const oMid = { lat: 0.009, lng: 0.011 }; // ~1.0 km
     const configs: Array<{ c: [number, number]; r: number; ps: number }> = [
-      { c: center,                                        r: fetchRadius, ps: 50 }, // main (nearest 50)
-      { c: [center[0],        center[1] + dLat],         r: 1600,        ps: 20 }, // N
-      { c: [center[0] + dLng, center[1]        ],        r: 1600,        ps: 20 }, // E
-      { c: [center[0],        center[1] - dLat],         r: 1600,        ps: 20 }, // S
-      { c: [center[0] - dLng, center[1]        ],        r: 1600,        ps: 20 }, // W
+      { c: center,                                                    r: fetchRadius, ps: 50 }, // main
+      { c: [center[0],            center[1] + oFar.lat],             r: 1400,        ps: 25 }, // N outer
+      { c: [center[0] + oFar.lng, center[1]            ],            r: 1400,        ps: 25 }, // E outer
+      { c: [center[0],            center[1] - oFar.lat],             r: 1400,        ps: 25 }, // S outer
+      { c: [center[0] - oFar.lng, center[1]            ],            r: 1400,        ps: 25 }, // W outer
+      { c: [center[0],            center[1] + oMid.lat],             r: 1000,        ps: 15 }, // N mid
+      { c: [center[0] + oMid.lng, center[1]            ],            r: 1000,        ps: 15 }, // E mid
+      { c: [center[0],            center[1] - oMid.lat],             r: 1000,        ps: 15 }, // S mid
+      { c: [center[0] - oMid.lng, center[1]            ],            r: 1000,        ps: 15 }, // W mid
     ];
 
     let accumulated: POIRestaurant[] = [];

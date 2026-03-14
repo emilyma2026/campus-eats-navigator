@@ -260,50 +260,57 @@ export default function MapTab({
           {/* ── Schedule Section ────────────────────────────────────────── */}
           {CLASSES.length > 0 && (
             <div className="px-4 pt-3">
-              {/* Collapsed bar: always shows current-class status + location */}
-              <div
-                className="flex items-center justify-between cursor-pointer select-none"
-                onClick={() => setScheduleExpanded((v) => !v)}
-              >
-                <div className="min-w-0 flex-1">
-                  {classStatus.type === 'in_class' && (
-                    <p className="text-[11px] text-muted-foreground leading-tight">
-                      当前&nbsp;
-                      <span className="font-black text-foreground">{classStatus.courseName}</span>
-                      &nbsp;还有&nbsp;
-                      <span className="font-black text-[#B8860B]">{classStatus.timeLeft}分钟</span>
-                      &nbsp;下课
-                      {currentAddress && (
-                        <span className="ml-2 text-[10px] text-muted-foreground/70">
-                          · <MapPin size={8} className="inline -mt-0.5 text-[#FFD000]" /> {currentAddress.slice(0, 10)}…
-                        </span>
-                      )}
-                    </p>
-                  )}
-                  {classStatus.type === 'next_class' && (
-                    <p className="text-[11px] text-muted-foreground leading-tight">
-                      下一节&nbsp;
-                      <span className="font-black text-foreground">{classStatus.courseName}</span>
-                      &nbsp;{classStatus.timeUntil}min后
-                    </p>
-                  )}
-                  {classStatus.type === 'done' && (
-                    <p className="text-[11px] text-muted-foreground">今日课程已结束</p>
-                  )}
+              {/* Collapsed view: status line + expand arrow */}
+              {!scheduleExpanded && (
+                <div
+                  className="flex items-center justify-between cursor-pointer select-none"
+                  onClick={() => setScheduleExpanded(true)}
+                >
+                  <div className="min-w-0 flex-1">
+                    {classStatus.type === 'in_class' && (
+                      <p className="text-[11px] text-muted-foreground leading-tight">
+                        当前&nbsp;
+                        <span className="font-black text-foreground">{classStatus.courseName}</span>
+                        &nbsp;还有&nbsp;
+                        <span className="font-black text-[#B8860B]">{classStatus.timeLeft}分钟</span>
+                        &nbsp;下课
+                      </p>
+                    )}
+                    {classStatus.type === 'next_class' && (
+                      <p className="text-[11px] text-muted-foreground leading-tight">
+                        下一节&nbsp;
+                        <span className="font-black text-foreground">{classStatus.courseName}</span>
+                        &nbsp;{classStatus.timeUntil}min后
+                      </p>
+                    )}
+                    {classStatus.type === 'done' && (
+                      <p className="text-[11px] text-muted-foreground">今日课程已结束</p>
+                    )}
+                  </div>
+                  <button className="ml-2 text-muted-foreground hover:text-foreground shrink-0">
+                    <ChevronDown size={14} />
+                  </button>
                 </div>
-                <button className="ml-2 text-muted-foreground hover:text-foreground shrink-0">
-                  {scheduleExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                </button>
-              </div>
+              )}
 
-              {/* Expanded: full timeline */}
+              {/* Expanded view: timeline only, with collapse arrow in top-right */}
               {scheduleExpanded && (
-                <div className="pt-2">
-                  {activeClass && (
-                    <div className="flex items-center gap-1.5 text-xs font-bold bg-[#FFD000]/10 text-[#6B4C00] px-3 py-1.5 rounded-full w-fit mb-2">
-                      <MapPin size={11} /> 当前课堂：{activeClass.campus}
-                    </div>
-                  )}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    {activeClass ? (
+                      <div className="flex items-center gap-1.5 text-xs font-bold bg-[#FFD000]/10 text-[#6B4C00] px-3 py-1.5 rounded-full">
+                        <MapPin size={11} /> 当前课堂：{activeClass.campus}
+                      </div>
+                    ) : (
+                      <span className="text-xs font-bold text-muted-foreground">今日课表</span>
+                    )}
+                    <button
+                      onClick={() => setScheduleExpanded(false)}
+                      className="ml-2 text-muted-foreground hover:text-foreground shrink-0"
+                    >
+                      <ChevronUp size={14} />
+                    </button>
+                  </div>
                   <ScheduleTimeline isRelocated={isRelocated} />
                 </div>
               )}
