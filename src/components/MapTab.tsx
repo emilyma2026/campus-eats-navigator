@@ -126,8 +126,8 @@ export default function MapTab({ onRestaurantsLoaded, highlightId, onHighlightCl
 
           {/* ── Transport + Walk Time ─────────────────────────────────────── */}
           <div className="px-4 pt-4">
-            {/* Transport mode segmented control */}
-            <div className="flex gap-1 bg-secondary rounded-xl p-1 mb-3">
+            {/* Transport mode — individual pill buttons */}
+            <div className="flex gap-2 mb-3">
               {(Object.entries(TRANSPORT) as [TransportMode, typeof TRANSPORT[TransportMode]][]).map(([mode, cfg]) => {
                 const Icon = cfg.icon;
                 const active = transportMode === mode;
@@ -135,8 +135,10 @@ export default function MapTab({ onRestaurantsLoaded, highlightId, onHighlightCl
                   <button
                     key={mode}
                     onClick={() => setTransportMode(mode)}
-                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                      active ? 'bg-[#FFD000] text-black shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-bold border-2 transition-all ${
+                      active
+                        ? 'bg-[#FFD000] border-[#FFD000] text-black shadow-sm'
+                        : 'bg-card border-border text-muted-foreground hover:border-[#FFD000]/60 hover:text-foreground'
                     }`}
                   >
                     <Icon size={13} /> {cfg.label}
