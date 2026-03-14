@@ -171,7 +171,9 @@ export default function AMapContainer({
 
     searchRef.current.searchNearBy('餐饮', center, fetchRadius, (status: string, result: any) => {
       if (status === 'complete' && result.poiList) {
+        const seen = new Set<string>();
         const pois: POIRestaurant[] = result.poiList.pois
+          .filter((poi: any) => { if (seen.has(poi.id)) return false; seen.add(poi.id); return true; })
           .map((poi: any) => ({
             id:       poi.id,
             name:     poi.name,
@@ -201,7 +203,9 @@ export default function AMapContainer({
     const radiusM = Math.max(walkTimeRef.current * speedRef.current, 100);
     searchRef.current.searchNearBy('餐饮', center, radiusM, (status: string, result: any) => {
       if (status === 'complete' && result.poiList) {
+        const seen2 = new Set<string>();
         const pois: POIRestaurant[] = result.poiList.pois
+          .filter((poi: any) => { if (seen2.has(poi.id)) return false; seen2.add(poi.id); return true; })
           .map((poi: any) => ({
             id:       poi.id,
             name:     poi.name,
@@ -309,7 +313,7 @@ export default function AMapContainer({
     }));
 
     searchRef.current = new window.AMap.PlaceSearch({
-      type: '餐饮服务', pageSize: 25, pageIndex: 1, extensions: 'all',
+      type: '餐饮服务', pageSize: 20, pageIndex: 1, extensions: 'all', autoFitView: true,
     });
 
     // Geocoder – use pre-loaded plugin or lazy-load fallback
@@ -386,15 +390,16 @@ export default function AMapContainer({
       `}</style>
       <div ref={mapRef} className="absolute inset-0" />
 
-      {/* ── Floating location label — anchored just below the search bar ── */}
+      {/* ── Floating location label — glassmorphism bar below search bar ── */}
       {centerLabel && (
         <div
           className="absolute pointer-events-none z-10"
           style={{ top: '57px', left: '12px', right: '12px' }}
         >
           <div className="flex justify-center">
-            <div className="inline-flex items-center gap-1 bg-black/45 backdrop-blur-sm text-white text-[11px] font-medium px-3 py-1 rounded-full shadow-md max-w-[220px]">
-              <span className="truncate">📍 {centerLabel}</span>
+            <div className="inline-flex items-center gap-1.5 bg-white/80 backdrop-blur-md text-gray-800 text-[11px] font-semibold px-3 py-1.5 rounded-full shadow-lg border border-white/60 max-w-[240px]">
+              <span className="text-[#B8860B] shrink-0 leading-none">📍</span>
+              <span className="truncate">{centerLabel}</span>
             </div>
           </div>
         </div>

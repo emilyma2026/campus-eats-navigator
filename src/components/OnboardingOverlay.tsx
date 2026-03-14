@@ -152,54 +152,75 @@ export default function OnboardingOverlay({ onComplete }: Props) {
           />
         </div>
 
-        {/* Reminder presets + custom picker */}
-        <div className="space-y-2">
-          <label className="text-sm font-bold">下课提醒时间</label>
-          <div className="flex gap-2">
-            {PRESETS.map(({ label, sublabel, value }) => (
+        {/* ── Enable Reminders — promoted toggle ───────────────────────── */}
+        <div className="bg-card border border-border rounded-2xl px-4 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 bg-[#FFD000]/15 rounded-xl flex items-center justify-center shrink-0">
+              <Bell size={14} className="text-[#B8860B]" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold">开启下课提醒</p>
+              <p className="text-[11px] text-muted-foreground truncate">
+                {enableNotifs ? '开启后可在设置中随时调整' : '关闭后跳过时间设置'}
+              </p>
+            </div>
+          </div>
+          <Toggle checked={enableNotifs} onChange={setEnableNotifs} />
+        </div>
+
+        {/* ── Time settings — only shown when reminders enabled ─────────── */}
+        {enableNotifs && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.22 }}
+            className="space-y-2 overflow-hidden"
+          >
+            <label className="text-sm font-bold block">下课提醒时间</label>
+            <div className="flex gap-2">
+              {PRESETS.map(({ label, sublabel, value }) => (
+                <button
+                  key={value}
+                  onClick={() => { setRemindMins(value); setUseCustom(false); }}
+                  className={`flex-1 py-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-0.5 ${
+                    !useCustom && remindMins === value
+                      ? 'bg-[#FFD000] border-[#FFD000] text-black shadow-sm'
+                      : 'border-border text-muted-foreground hover:border-yellow-300'
+                  }`}
+                >
+                  <span className="font-black text-base leading-none">{label}</span>
+                  <span className="text-[10px] font-semibold leading-none opacity-70">{sublabel}</span>
+                </button>
+              ))}
               <button
-                key={value}
-                onClick={() => { setRemindMins(value); setUseCustom(false); }}
-                className={`flex-1 py-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-0.5 ${
-                  !useCustom && remindMins === value
+                onClick={() => setUseCustom((v) => !v)}
+                className={`flex-1 py-3 rounded-2xl font-bold text-sm border-2 transition-all flex items-center justify-center gap-0.5 ${
+                  useCustom
                     ? 'bg-[#FFD000] border-[#FFD000] text-black shadow-sm'
                     : 'border-border text-muted-foreground hover:border-yellow-300'
                 }`}
               >
-                <span className="font-black text-base leading-none">{label}</span>
-                <span className="text-[10px] font-semibold leading-none opacity-70">{sublabel}</span>
+                自定义<ChevronDown size={12} className={`transition-transform ${useCustom ? 'rotate-180' : ''}`} />
               </button>
-            ))}
-            <button
-              onClick={() => setUseCustom((v) => !v)}
-              className={`flex-1 py-3 rounded-2xl font-bold text-sm border-2 transition-all flex items-center justify-center gap-0.5 ${
-                useCustom
-                  ? 'bg-[#FFD000] border-[#FFD000] text-black shadow-sm'
-                  : 'border-border text-muted-foreground hover:border-yellow-300'
-              }`}
-            >
-              自定义<ChevronDown size={12} className={`transition-transform ${useCustom ? 'rotate-180' : ''}`} />
-            </button>
-          </div>
+            </div>
+            {useCustom && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.22 }}
+              >
+                <WheelPicker value={remindMins} onChange={setRemindMins} />
+              </motion.div>
+            )}
+          </motion.div>
+        )}
 
-          {/* Scroll wheel picker (shown when custom selected) */}
-          {useCustom && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.22 }}
-            >
-              <WheelPicker value={remindMins} onChange={setRemindMins} />
-            </motion.div>
-          )}
-        </div>
-
-        {/* Optional settings card */}
+        {/* ── Optional settings ─────────────────────────────────────────── */}
         <div className="space-y-2">
           <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">可选设置</p>
           <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
-
             {/* Upload Schedule toggle */}
             <div className="flex items-center justify-between px-4 py-3.5">
               <div className="flex items-center gap-3 min-w-0">
@@ -212,24 +233,6 @@ export default function OnboardingOverlay({ onComplete }: Props) {
                 </div>
               </div>
               <Toggle checked={uploadSchedule} onChange={setUploadSchedule} />
-            </div>
-
-            {/* Enable Notifications toggle */}
-            <div className="flex items-center justify-between px-4 py-3.5">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 bg-[#FFD000]/15 rounded-xl flex items-center justify-center shrink-0">
-                  <Bell size={14} className="text-[#B8860B]" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">开启通知</p>
-                  <p className="text-[11px] text-muted-foreground truncate">
-                    {remindMins <= 15
-                      ? `提前 ${remindMins} 分钟提醒，下课冲刺堂食 🍽️`
-                      : `提前 ${remindMins >= 60 ? `${remindMins / 60}小时` : `${remindMins}分钟`} 预警，从容布局外卖 🛵`}
-                  </p>
-                </div>
-              </div>
-              <Toggle checked={enableNotifs} onChange={setEnableNotifs} />
             </div>
           </div>
         </div>
@@ -282,12 +285,12 @@ export default function OnboardingOverlay({ onComplete }: Props) {
           </motion.div>
         )}
 
-        {/* CTA */}
+        {/* ── Confirm & Enter CTA ──────────────────────────────────────── */}
         <button
           onClick={handleEnter}
-          className="w-full bg-[#FFD000] text-black font-bold py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-yellow-400 active:scale-[0.98] transition-all text-base shadow-lg"
+          className="w-full bg-[#FFD000] text-black font-black py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-yellow-400 active:scale-[0.98] transition-all text-base shadow-lg mt-2"
         >
-          进入 Bell &amp; Bite 🎉
+          <Check size={16} /> 确认进入 Bell &amp; Bite
         </button>
 
         <p className="text-xs text-center text-muted-foreground pb-2">

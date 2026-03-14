@@ -7,7 +7,7 @@ import ScheduleTimeline from './ScheduleTimeline';
 import AMapContainer, { POIRestaurant } from './AMapContainer';
 import StoreDrawer, { EnrichedRestaurant, CrowdLevel } from './StoreDrawer';
 import MeituanLogo from './MeituanLogo';
-import { getActiveClass, getClassStatus } from '@/data/scheduleData';
+import { getActiveClass, getClassStatus, CLASSES } from '@/data/scheduleData';
 
 // ── Transport config ─────────────────────────────────────────────────────────
 type TransportMode = 'walk' | 'bike' | 'drive';
@@ -257,19 +257,33 @@ export default function MapTab({
       <aside className="w-[340px] h-full bg-card border-l border-border flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto custom-scrollbar">
 
-          {/* Active-class campus tag */}
-          {activeClass && (
-            <div className="px-4 pt-3 pb-0">
-              <div className="flex items-center gap-1.5 text-xs font-bold bg-[#FFD000]/10 text-[#6B4C00] px-3 py-1.5 rounded-full w-fit">
-                <MapPin size={11} /> 当前课堂：{activeClass.campus}
+          {/* Schedule — hidden when no classes; shows welcome card instead */}
+          {CLASSES.length === 0 ? (
+            <div className="px-4 pt-4">
+              <div className="bg-secondary rounded-2xl p-4 flex items-center gap-3">
+                <span className="text-2xl shrink-0">🌤️</span>
+                <div>
+                  <p className="text-sm font-bold">今天没有课</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">探索周边美食，随心而动 ✨</p>
+                </div>
               </div>
             </div>
+          ) : (
+            <>
+              {/* Active-class campus tag */}
+              {activeClass && (
+                <div className="px-4 pt-3 pb-0">
+                  <div className="flex items-center gap-1.5 text-xs font-bold bg-[#FFD000]/10 text-[#6B4C00] px-3 py-1.5 rounded-full w-fit">
+                    <MapPin size={11} /> 当前课堂：{activeClass.campus}
+                  </div>
+                </div>
+              )}
+              {/* Schedule */}
+              <div className="px-4 pt-3">
+                <ScheduleTimeline isRelocated={isRelocated} />
+              </div>
+            </>
           )}
-
-          {/* Schedule */}
-          <div className="px-4 pt-3">
-            <ScheduleTimeline isRelocated={isRelocated} />
-          </div>
 
           {/* ── Smart Decision Banner ─────────────────────────────────────── */}
           {classStatus.type === 'in_class' && classStatus.timeLeft !== undefined && (
