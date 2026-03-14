@@ -1,161 +1,78 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MapPin, Clock, Star, Coffee, Tag, Zap, ThumbsUp, Utensils, X, ExternalLink, MapPinned } from 'lucide-react';
 import ScheduleTimeline from './ScheduleTimeline';
-import AMapContainer from './AMapContainer';
+import AMapContainer, { POIRestaurant } from './AMapContainer';
 import MeituanLogo from './MeituanLogo';
 
-interface Restaurant {
-  id: number;
-  name: string;
-  left: number;
-  top: number;
-  lng: number;
-  lat: number;
-  rating: number;
-  dish: string;
-  price: number;
-  walkMins: number;
-  reviews: string;
-  studentDeal?: boolean;
-}
-
-const RESTAURANTS: Restaurant[] = [
-  { id: 1, name: "Guanghua Canteen", left: 35, top: 30, lng: 121.508, lat: 31.302, rating: 4.8, dish: "Pork Ribs Rice", price: 18, walkMins: 5, reviews: "1.2k", studentDeal: true },
-  { id: 2, name: "Campus Dumpling", left: 50, top: 42, lng: 121.512, lat: 31.299, rating: 4.7, dish: "Soup Dumplings", price: 20, walkMins: 7, reviews: "3.2k", studentDeal: true },
-  { id: 3, name: "North Gate Grill", left: 42, top: 20, lng: 121.505, lat: 31.305, rating: 4.7, dish: "Lamb Skewers", price: 22, walkMins: 8, reviews: "2.1k" },
-  { id: 4, name: "Knowledge Café", left: 62, top: 35, lng: 121.515, lat: 31.301, rating: 4.9, dish: "Matcha Latte Set", price: 28, walkMins: 10, reviews: "1.5k" },
-  { id: 5, name: "Daxue Rd. Bistro", left: 55, top: 55, lng: 121.513, lat: 31.297, rating: 4.6, dish: "Hand-pulled Noodles", price: 15, walkMins: 12, reviews: "890", studentDeal: true },
-  { id: 6, name: "SUFE North Hall", left: 70, top: 50, lng: 121.518, lat: 31.298, rating: 4.5, dish: "Scallion Oil Noodles", price: 12, walkMins: 15, reviews: "670" },
-  { id: 7, name: "Tongji South Wok", left: 28, top: 60, lng: 121.503, lat: 31.295, rating: 4.4, dish: "Mapo Tofu Rice", price: 16, walkMins: 18, reviews: "430", studentDeal: true },
-  { id: 8, name: "Wujiaochang BBQ", left: 58, top: 68, lng: 121.514, lat: 31.293, rating: 4.3, dish: "Grilled Fish", price: 35, walkMins: 20, reviews: "560" },
-];
+const WALK_SPEED = 80; // meters per minute
 
 const FILTERS = [
-  { label: 'Student Deal', icon: Tag },
-  { label: 'Discount', icon: Zap },
-  { label: 'Top Rated', icon: ThumbsUp },
-  { label: 'Quick Meal', icon: Utensils },
-  { label: 'Coffee', icon: Coffee },
+  { label: '学生优惠', icon: Tag },
+  { label: '折扣', icon: Zap },
+  { label: '高评分', icon: ThumbsUp },
+  { label: '快餐', icon: Utensils },
+  { label: '咖啡', icon: Coffee },
 ];
+
+// Randomly assign deals to some restaurants for demo purposes
+const getDealFlags = (id: string) => {
+  const hash = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  return {
+    studentDeal: hash % 3 === 0,
+    meituanVoucher: hash % 4 === 0,
+  };
+};
 
 export default function CampusFoodMap() {
   const [walkTime, setWalkTime] = useState(10);
-  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [restaurants, setRestaurants] = useState<POIRestaurant[]>([]);
 
   const toggleFilter = (label: string) => {
     setActiveFilters(prev => prev.includes(label) ? prev.filter(f => f !== label) : [...prev, label]);
   };
 
-  const filtered = useMemo(() => {
-    return RESTAURANTS.filter(r => r.walkMins <= walkTime);
-  }, [walkTime]);
+  const handlePOIResults = useCallback((pois: POIRestaurant[]) => {
+    setRestaurants(pois);
+  }, []);
 
-  const selectedRestaurant = RESTAURANTS.find(r => r.id === selectedId) || null;
-
-  const handlePinClick = (id: number) => {
+  const handlePinClick = (id: string) => {
     setSelectedId(prev => prev === id ? null : id);
   };
 
-  // Check if AMap key is set
-  const hasAMapKey = true;
+  const enrichedRestaurants = useMemo(() => {
+    return restaurants.map(r => ({
+      ...r,
+      walkMins: Math.max(1, Math.round(r.distance / WALK_SPEED)),
+      ...getDealFlags(r.id),
+    }));
+  }, [restaurants]);
+
+  const selectedRestaurant = enrichedRestaurants.find(r => r.id === selectedId) || null;
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
       {/* MAP AREA */}
       <section className="relative flex-[7] bg-muted overflow-hidden">
-        {/* AMap container (renders when key is available) */}
         <AMapContainer
-          restaurants={filtered.map(r => ({ id: r.id, name: r.name, lng: r.lng, lat: r.lat, walkMins: r.walkMins }))}
+          walkTime={walkTime}
+          onPOIResults={handlePOIResults}
           selectedId={selectedId}
           onPinClick={handlePinClick}
         />
 
-        {/* Placeholder map (shown when no AMap key) */}
-        {!hasAMapKey && (
-          <>
-            {/* Grid background */}
-            <div
-              className="absolute inset-0 opacity-20"
-              style={{
-                backgroundImage: `
-                  linear-gradient(hsl(var(--border)) 1px, transparent 1px),
-                  linear-gradient(90deg, hsl(var(--border)) 1px, transparent 1px)
-                `,
-                backgroundSize: '40px 40px',
-              }}
-            />
-
-            {/* Fake roads */}
-            <svg className="absolute inset-0 w-full h-full opacity-[0.12]" xmlns="http://www.w3.org/2000/svg">
-              <line x1="20%" y1="0" x2="45%" y2="100%" stroke="hsl(var(--muted-foreground))" strokeWidth="4" />
-              <line x1="60%" y1="0" x2="35%" y2="100%" stroke="hsl(var(--muted-foreground))" strokeWidth="4" />
-              <line x1="0" y1="40%" x2="100%" y2="50%" stroke="hsl(var(--muted-foreground))" strokeWidth="4" />
-              <line x1="0" y1="70%" x2="100%" y2="65%" stroke="hsl(var(--muted-foreground))" strokeWidth="3" />
-              <line x1="10%" y1="20%" x2="80%" y2="25%" stroke="hsl(var(--muted-foreground))" strokeWidth="2" />
-            </svg>
-
-            {/* Map label */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-muted-foreground/15 text-xs font-semibold tracking-[0.4em] uppercase select-none pointer-events-none">
-              Wujiaochang · Shanghai
-            </div>
-
-            {/* Pins */}
-            {filtered.map((r) => {
-              const isSelected = selectedId === r.id;
-              return (
-                <motion.button
-                  key={r.id}
-                  onClick={() => handlePinClick(r.id)}
-                  initial={{ scale: 0, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0, opacity: 0 }}
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.95 }}
-                  className="absolute z-10 flex flex-col items-center cursor-pointer"
-                  style={{ left: `${r.left}%`, top: `${r.top}%`, transform: 'translate(-50%, -100%)' }}
-                >
-                  <div className={`relative flex items-center gap-1 px-2.5 py-1.5 rounded-full shadow-elevated transition-all duration-200 ${
-                    isSelected
-                      ? 'bg-accent text-accent-foreground scale-110'
-                      : 'bg-primary text-primary-foreground hover:shadow-lg'
-                  }`}>
-                    <MapPin size={14} className={isSelected ? 'text-accent-foreground' : 'text-primary-foreground'} fill="currentColor" fillOpacity={0.2} />
-                    <span className="text-xs font-bold whitespace-nowrap">{r.walkMins}m</span>
-                  </div>
-                  <div className={`w-0 h-0 border-l-[6px] border-r-[6px] border-t-[8px] border-l-transparent border-r-transparent ${
-                    isSelected ? 'border-t-accent' : 'border-t-primary'
-                  }`} />
-                  {isSelected && (
-                    <motion.span
-                      initial={{ opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-1 text-[10px] font-semibold text-foreground bg-card px-2 py-0.5 rounded shadow-card whitespace-nowrap"
-                    >
-                      {r.name}
-                    </motion.span>
-                  )}
-                </motion.button>
-              );
-            })}
-          </>
-        )}
-
         {/* Floating info card */}
         <AnimatePresence>
-          {selectedRestaurant && filtered.find(r => r.id === selectedRestaurant.id) && (
+          {selectedRestaurant && (
             <motion.div
               key="float"
               initial={{ opacity: 0, y: 20, scale: 0.9 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.9 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="absolute z-20 bg-card rounded-2xl shadow-elevated p-4 w-64"
-              style={{
-                left: `${Math.min(Math.max(selectedRestaurant.left, 20), 65)}%`,
-                top: `${Math.min(selectedRestaurant.top + 10, 75)}%`,
-              }}
+              className="absolute z-20 bg-card rounded-2xl shadow-elevated p-4 w-72 bottom-16 left-1/2 -translate-x-1/2"
             >
               <button
                 onClick={() => setSelectedId(null)}
@@ -166,18 +83,25 @@ export default function CampusFoodMap() {
               <h4 className="font-bold text-sm">{selectedRestaurant.name}</h4>
               <div className="flex items-center gap-2 mt-1">
                 <div className="flex items-center gap-0.5 text-accent text-xs font-bold">
-                  <Star size={12} fill="currentColor" /> {selectedRestaurant.rating}
+                  <Star size={12} fill="currentColor" /> {selectedRestaurant.rating.toFixed(1)}
                 </div>
-                <span className="text-muted-foreground text-xs">({selectedRestaurant.reviews})</span>
+                <span className="text-muted-foreground text-xs">{selectedRestaurant.address}</span>
               </div>
-              <p className="text-xs text-muted-foreground mt-1.5">Popular: {selectedRestaurant.dish}</p>
-              {selectedRestaurant.studentDeal && (
-                <span className="inline-flex items-center gap-1 mt-2 px-2 py-0.5 bg-primary/20 text-primary-foreground text-[10px] font-bold rounded-full">
-                  <Tag size={10} /> Student Deal
-                </span>
-              )}
+              <p className="text-xs text-muted-foreground mt-1.5 truncate">{selectedRestaurant.type}</p>
+              <div className="flex items-center gap-2 mt-2">
+                {selectedRestaurant.studentDeal && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/20 text-foreground text-[10px] font-bold rounded-full">
+                    <Tag size={10} /> 学生优惠
+                  </span>
+                )}
+                {selectedRestaurant.meituanVoucher && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-accent/20 text-foreground text-[10px] font-bold rounded-full">
+                    <MeituanLogo size={10} /> 美团券
+                  </span>
+                )}
+              </div>
               <button className="w-full mt-3 bg-accent text-accent-foreground text-xs font-bold py-2 rounded-xl flex items-center justify-center gap-1.5 hover:opacity-90 transition-opacity">
-                <ExternalLink size={12} /> Order on Meituan
+                <ExternalLink size={12} /> 在美团下单
               </button>
             </motion.div>
           )}
@@ -185,7 +109,7 @@ export default function CampusFoodMap() {
 
         {/* Map attribution */}
         <div className="absolute bottom-3 left-3 flex items-center gap-1.5 text-[10px] text-muted-foreground/50 font-medium">
-          <MapPinned size={10} /> Bell Bite · Wujiaochang
+          <MapPinned size={10} /> Bell & Bite · 五角场
         </div>
       </section>
 
@@ -198,7 +122,7 @@ export default function CampusFoodMap() {
               <div className="w-8 h-8 bg-primary rounded-xl flex items-center justify-center shadow-card">
                 <Utensils size={16} className="text-primary-foreground" />
               </div>
-              <h1 className="text-lg font-extrabold tracking-tight">Bell Bite</h1>
+              <h1 className="text-lg font-extrabold tracking-tight">Bell & Bite</h1>
             </div>
           </div>
 
@@ -210,20 +134,20 @@ export default function CampusFoodMap() {
           {/* Walk Time Slider */}
           <div className="px-5 pt-4">
             <div className="flex justify-between items-end mb-2">
-              <label className="text-sm font-semibold">Walk Time</label>
-              <span className="text-sm font-bold text-accent tabular-nums">{walkTime} min</span>
+              <label className="text-sm font-semibold">步行时间</label>
+              <span className="text-sm font-bold text-accent tabular-nums">{walkTime} 分钟</span>
             </div>
             <input
               type="range"
-              min="0"
+              min="1"
               max="20"
               value={walkTime}
               onChange={(e) => { setWalkTime(parseInt(e.target.value)); setSelectedId(null); }}
               className="w-full cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-              <span>0 min</span>
-              <span>20 min</span>
+              <span>1 分钟</span>
+              <span>20 分钟</span>
             </div>
           </div>
 
@@ -253,10 +177,10 @@ export default function CampusFoodMap() {
           {/* Restaurant List */}
           <div className="px-5 pt-5 pb-5">
             <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
-              Recommended Nearby · {filtered.length}
+              下课吃什么 · {enrichedRestaurants.length} 家
             </p>
             <div className="space-y-2.5">
-              {filtered
+              {enrichedRestaurants
                 .sort((a, b) => a.walkMins - b.walkMins)
                 .map(r => {
                   const isSelected = selectedId === r.id;
@@ -276,20 +200,26 @@ export default function CampusFoodMap() {
                           <p className="text-sm font-bold truncate">{r.name}</p>
                           <div className="flex items-center gap-2 mt-1">
                             <div className="flex items-center gap-0.5 text-accent text-xs font-bold">
-                              <Star size={12} fill="currentColor" /> {r.rating}
+                              <Star size={12} fill="currentColor" /> {r.rating.toFixed(1)}
                             </div>
-                            <span className="text-xs text-muted-foreground">¥{r.price} / person</span>
+                            <span className="text-xs text-muted-foreground truncate">{r.address}</span>
                           </div>
-                          <p className="text-xs text-muted-foreground mt-1">Popular: {r.dish}</p>
+                          <p className="text-xs text-muted-foreground mt-1 truncate">{r.type}</p>
                         </div>
                         <div className="flex flex-col items-end gap-1 flex-shrink-0 ml-3">
                           <span className="text-xs font-bold text-accent flex items-center gap-1">
-                            <Clock size={11} /> {r.walkMins} min
+                            <Clock size={11} /> {r.walkMins} 分钟
                           </span>
                           {r.studentDeal && (
                             <span className="flex items-center gap-1 text-[10px] font-bold text-primary-foreground bg-primary px-1.5 py-0.5 rounded">
+                              <Tag size={10} />
+                              学生价
+                            </span>
+                          )}
+                          {r.meituanVoucher && (
+                            <span className="flex items-center gap-1 text-[10px] font-bold text-primary-foreground bg-accent px-1.5 py-0.5 rounded">
                               <MeituanLogo size={10} />
-                              Deal
+                              美团券
                             </span>
                           )}
                         </div>
@@ -297,11 +227,11 @@ export default function CampusFoodMap() {
                     </motion.button>
                   );
                 })}
-              {filtered.length === 0 && (
+              {enrichedRestaurants.length === 0 && (
                 <div className="text-center py-8 text-muted-foreground">
                   <MapPin size={24} className="mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No restaurants within {walkTime} min walk</p>
-                  <p className="text-xs mt-1">Try increasing the walk time</p>
+                  <p className="text-sm">步行 {walkTime} 分钟内暂无餐厅</p>
+                  <p className="text-xs mt-1">试试增加步行时间</p>
                 </div>
               )}
             </div>
