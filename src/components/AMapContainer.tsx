@@ -16,6 +16,8 @@ interface AMapContainerProps {
   speedMPerMin?: number;             // 80 walk | 250 bike | 500 drive
   initialCenter?: [number, number];
   externalCenter?: [number, number]; // pushed in from search bar / AutoComplete
+  /** Pan map to coords without triggering a refetch (e.g. external POI spotlight) */
+  panToCoords?: [number, number] | null;
   /** Sidebar-filtered POI list; markers always mirror this set */
   visiblePOIs?: POIRestaurant[];
   onPOIResults: (restaurants: POIRestaurant[]) => void;
@@ -33,12 +35,6 @@ function maxFetchRadius(speed: number): number {
   if (speed <= 100)  return 3200;  // walk  ≤40 min @ 80 m/min  → 3.2 km
   if (speed <= 300)  return 7500;  // bike  ≤30 min @ 250 m/min → 7.5 km
   return 10000;                    // drive ≤20 min @ 500 m/min → 10 km
-}
-
-/** Compute ideal map zoom for a given radius so the circle fits the viewport. */
-function radiusToZoom(radiusM: number): number {
-  const zoom = Math.round(16 - Math.log2(Math.max(radiusM, 100) / 100));
-  return Math.min(17, Math.max(11, zoom));
 }
 
 /** Remove restaurants within 50 m of each other (same-mall dedup). */
@@ -60,6 +56,7 @@ export default function AMapContainer({
   speedMPerMin = 80,
   initialCenter,
   externalCenter,
+  panToCoords,
   visiblePOIs,
   onPOIResults,
   onAddressChange,
@@ -105,7 +102,7 @@ export default function AMapContainer({
   useEffect(() => { walkTimeRef.current         = walkTime;         }, [walkTime]);
   useEffect(() => { speedRef.current            = speedMPerMin;     }, [speedMPerMin]);
 
-  // ── Circle: create or update the radius ring ─────────────────────────────
+  // ── Circle: create or update the radius ring, then fit view ─────────────
   const updateCircle = useCallback((map: any, center: [number, number]) => {
     const radiusM = Math.max(walkTimeRef.current * speedRef.current, 100);
     onRadiusChangeRef.current?.(radiusM);
@@ -125,6 +122,8 @@ export default function AMapContainer({
       });
       map.add(circleRef.current);
     }
+    // Fit the viewport so the circle fills the screen (animated, 30px padding)
+    map.setFitView([circleRef.current], false, [30, 30, 30, 30], 17);
   }, []);
 
   // ── Geocode current center → emit human-readable address ─────────────────
@@ -139,7 +138,7 @@ export default function AMapContainer({
     });
   }, []);
 
-  // ── Marker rendering — dot-only pins (no text label) ─────────────────────
+  // ── Marker rendering — SVG pin markers ───────────────────────────────────
   const updateMarkers = useCallback((map: any, pois: POIRestaurant[]) => {
     currentMarkersRef.current = pois;
     markersRef.current.forEach((m) => map.remove(m));
@@ -147,20 +146,20 @@ export default function AMapContainer({
 
     pois.forEach((r) => {
       const isSel = selectedIdRef.current === r.id;
+      const w = isSel ? 22 : 16;
+      const h = isSel ? 29 : 22;
+      const fill = isSel ? '#FF7A00' : '#FFD000';
+      const stroke = isSel ? 'white' : 'rgba(255,255,255,0.9)';
+      const sw = isSel ? '2' : '1.5';
       const marker = new window.AMap.Marker({
         position: [r.lng, r.lat],
-        content: `<div style="
-          background:${isSel ? '#FF7A00' : '#FFD000'};
-          width:${isSel ? '14px' : '10px'};
-          height:${isSel ? '14px' : '10px'};
-          border-radius:50%;
-          border:${isSel ? '2.5px solid white' : '2px solid rgba(255,255,255,0.85)'};
-          box-shadow:0 2px 8px rgba(0,0,0,0.22);
-          cursor:pointer;
-          animation:bb-marker-in 0.18s ease;
-          transition:transform 0.15s;
-        "></div>`,
-        offset: new window.AMap.Pixel(isSel ? -7 : -5, isSel ? -7 : -5),
+        content: `<div style="width:${w}px;height:${h}px;cursor:pointer;animation:bb-marker-in 0.18s ease;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.28));">
+          <svg viewBox="0 0 20 28" width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
+            <path d="M10 0C4.477 0 0 4.477 0 10c0 7 10 18 10 18S20 17 20 10C20 4.477 15.523 0 10 0z" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+            <circle cx="10" cy="10" r="4" fill="white" opacity="0.9"/>
+          </svg>
+        </div>`,
+        offset: new window.AMap.Pixel(-w / 2, -h),
         zIndex: isSel ? 150 : 100,
       });
       (marker as any)._poiId = r.id;
@@ -273,14 +272,9 @@ export default function AMapContainer({
     });
   }, [updateCircle, geocodeCenter, parsePOIs]);
 
-  // ── Reactive: walkTime slider → instant LOCAL filter + update circle + zoom ──
+  // ── Reactive: walkTime slider → instant LOCAL filter + update circle + fitView ──
   useEffect(() => {
-    applyFilter();
-    // Auto-zoom: smoothly zoom map to match the walk radius
-    if (mapInstanceRef.current) {
-      const radiusM = Math.max(walkTime * speedMPerMin, 100);
-      mapInstanceRef.current.setZoom(radiusToZoom(radiusM), true);
-    }
+    applyFilter(); // updateCircle inside applyFilter calls setFitView automatically
   }, [walkTime, speedMPerMin, applyFilter]);
 
   // ── Reactive: transport mode change → re-fetch ───────────────────────────
@@ -302,6 +296,16 @@ export default function AMapContainer({
     onLocationChangeRef.current?.(externalCenter);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalCenter]);
+
+  // ── Reactive: panToCoords — pan only, no refetch (external POI spotlight) ──
+  const lastPanRef = useRef<string>('');
+  useEffect(() => {
+    if (!panToCoords || !mapInstanceRef.current) return;
+    const key = panToCoords.join(',');
+    if (key === lastPanRef.current) return;
+    lastPanRef.current = key;
+    mapInstanceRef.current.panTo(panToCoords);
+  }, [panToCoords]);
 
   // ── Reactive: visiblePOIs → keep map markers in sync with sidebar list ────
   useEffect(() => {

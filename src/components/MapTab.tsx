@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   Tag, Zap, Star, Clock,
-  MapPin, LocateFixed, Footprints, Bike, Car, Search, X, Shield, ChevronDown, ChevronUp,
+  MapPin, Footprints, Bike, Car, Search, X, Shield, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import ScheduleTimeline from './ScheduleTimeline';
 import AMapContainer, { POIRestaurant } from './AMapContainer';
@@ -69,6 +69,8 @@ interface Props {
   onLocationChange?: (loc: [number, number]) => void;
   onRadiusChange?: (radiusM: number) => void;
   onAddressChange?: (addr: string) => void;
+  externalRestaurant?: EnrichedRestaurant | null;
+  onExternalRestaurantClose?: () => void;
 }
 
 export default function MapTab({
@@ -78,6 +80,8 @@ export default function MapTab({
   onLocationChange,
   onRadiusChange,
   onAddressChange: onAddressChangeProp,
+  externalRestaurant,
+  onExternalRestaurantClose,
 }: Props) {
   const [walkTime,           setWalkTime]           = useState(MAX_TIME['walk']); // default = max
   const [transportMode,      setTransportMode]      = useState<TransportMode>('walk');
@@ -90,6 +94,8 @@ export default function MapTab({
   const [autoCompleteCenter, setAutoCompleteCenter] = useState<[number, number] | undefined>(undefined);
   /** Whether the schedule block is expanded or collapsed */
   const [scheduleExpanded,   setScheduleExpanded]   = useState(true);
+  /** Pan-only coords for external POI spotlight (no refetch) */
+  const [panToCoords,        setPanToCoords]        = useState<[number, number] | null>(null);
 
   // Tick every minute to keep smart-banner fresh
   const [, forceUpdate] = useState(0);
@@ -164,6 +170,13 @@ export default function MapTab({
     if (highlightId) { setSelectedId(highlightId); onHighlightClear(); }
   }, [highlightId, onHighlightClear]);
 
+  // Pan map when an external restaurant is spotlighted (no refetch)
+  useEffect(() => {
+    if (externalRestaurant) {
+      setPanToCoords([externalRestaurant.lng, externalRestaurant.lat]);
+    }
+  }, [externalRestaurant]);
+
   const toggleFilter = (label: string) =>
     setActiveFilters((prev) => prev.includes(label) ? prev.filter((f) => f !== label) : [...prev, label]);
 
@@ -188,7 +201,7 @@ export default function MapTab({
     });
   }, [enriched, activeFilters]);
 
-  const selectedRestaurant = enriched.find((r) => r.id === selectedId) ?? null;
+  const selectedRestaurant = externalRestaurant ?? (enriched.find((r) => r.id === selectedId) ?? null);
   const distKm = Math.round(walkTime * speedMPerMin / 100) / 10;
 
   return (
@@ -201,6 +214,7 @@ export default function MapTab({
           speedMPerMin={speedMPerMin}
           initialCenter={initialCenter}
           externalCenter={autoCompleteCenter}
+          panToCoords={panToCoords}
           visiblePOIs={filtered as POIRestaurant[]}
           onPOIResults={handlePOIResults}
           onAddressChange={handleAddressChange}
@@ -237,20 +251,6 @@ export default function MapTab({
           </div>
         </div>
 
-        {/* Floating address bar — translucent, top-center below search */}
-        {currentAddress && (
-          <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
-            <div className="flex items-center gap-1 bg-white/80 backdrop-blur-sm text-[11px] font-semibold text-gray-700 px-3 py-1 rounded-full shadow border border-white/60">
-              <MapPin size={9} className="text-[#FFD000] shrink-0" />
-              <span className="truncate max-w-[220px]">{currentAddress}</span>
-              {isRelocated && (
-                <span className="ml-1 flex items-center gap-0.5 text-green-600 font-bold shrink-0">
-                  <LocateFixed size={8} /> 已更新
-                </span>
-              )}
-            </div>
-          </div>
-        )}
       </section>
 
       {/* ── RIGHT: Feed ────────────────────────────────────────────────────── */}
@@ -260,32 +260,17 @@ export default function MapTab({
           {/* ── Schedule Section ────────────────────────────────────────── */}
           {CLASSES.length > 0 && (
             <div className="px-4 pt-3">
-              {/* Collapsed view: status line + expand arrow */}
+              {/* Collapsed view: location (campus or selected address) + expand arrow */}
               {!scheduleExpanded && (
                 <div
                   className="flex items-center justify-between cursor-pointer select-none"
                   onClick={() => setScheduleExpanded(true)}
                 >
-                  <div className="min-w-0 flex-1">
-                    {classStatus.type === 'in_class' && (
-                      <p className="text-[11px] text-muted-foreground leading-tight">
-                        当前&nbsp;
-                        <span className="font-black text-foreground">{classStatus.courseName}</span>
-                        &nbsp;还有&nbsp;
-                        <span className="font-black text-[#B8860B]">{classStatus.timeLeft}分钟</span>
-                        &nbsp;下课
-                      </p>
-                    )}
-                    {classStatus.type === 'next_class' && (
-                      <p className="text-[11px] text-muted-foreground leading-tight">
-                        下一节&nbsp;
-                        <span className="font-black text-foreground">{classStatus.courseName}</span>
-                        &nbsp;{classStatus.timeUntil}min后
-                      </p>
-                    )}
-                    {classStatus.type === 'done' && (
-                      <p className="text-[11px] text-muted-foreground">今日课程已结束</p>
-                    )}
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <MapPin size={11} className="text-[#B8860B] shrink-0" />
+                    <span className="text-[12px] font-semibold text-foreground truncate">
+                      {isRelocated && currentAddress ? currentAddress : (activeClass?.campus ?? '复旦·邯郸')}
+                    </span>
                   </div>
                   <button className="ml-2 text-muted-foreground hover:text-foreground shrink-0">
                     <ChevronDown size={14} />
@@ -293,20 +278,13 @@ export default function MapTab({
                 </div>
               )}
 
-              {/* Expanded view: timeline only, with collapse arrow in top-right */}
+              {/* Expanded view: timeline only + collapse arrow in top-right */}
               {scheduleExpanded && (
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    {activeClass ? (
-                      <div className="flex items-center gap-1.5 text-xs font-bold bg-[#FFD000]/10 text-[#6B4C00] px-3 py-1.5 rounded-full">
-                        <MapPin size={11} /> 当前课堂：{activeClass.campus}
-                      </div>
-                    ) : (
-                      <span className="text-xs font-bold text-muted-foreground">今日课表</span>
-                    )}
+                  <div className="flex items-center justify-end mb-2">
                     <button
                       onClick={() => setScheduleExpanded(false)}
-                      className="ml-2 text-muted-foreground hover:text-foreground shrink-0"
+                      className="text-muted-foreground hover:text-foreground shrink-0"
                     >
                       <ChevronUp size={14} />
                     </button>
@@ -393,27 +371,27 @@ export default function MapTab({
             </div>
           </div>
 
-          {/* Filter Chips */}
-          <div className="px-4 pt-4 flex flex-wrap gap-2">
-            {FILTERS.map(({ label, icon: Icon }) => {
-              const active = activeFilters.includes(label);
-              return (
-                <button key={label} onClick={() => toggleFilter(label)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
-                    active ? 'bg-[#FFD000] border-[#FFD000] text-black' : 'bg-card border-border text-muted-foreground hover:border-yellow-300'
-                  }`}
-                >
-                  <Icon size={12} />{label}
-                </button>
-              );
-            })}
-          </div>
-
           {/* Restaurant List */}
           <div className="px-4 pt-4 pb-5">
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
               下课吃什么 · <span className="text-foreground">{filtered.length}</span> 家
             </p>
+
+            {/* Filter Chips */}
+            <div className="flex flex-wrap gap-2 mb-3">
+              {FILTERS.map(({ label, icon: Icon }) => {
+                const active = activeFilters.includes(label);
+                return (
+                  <button key={label} onClick={() => toggleFilter(label)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border ${
+                      active ? 'bg-[#FFD000] border-[#FFD000] text-black' : 'bg-card border-border text-muted-foreground hover:border-yellow-300'
+                    }`}
+                  >
+                    <Icon size={12} />{label}
+                  </button>
+                );
+              })}
+            </div>
             <div className="space-y-2">
               {filtered.sort((a, b) => a.walkMins - b.walkMins).map((r, idx) => {
                 const isSel = selectedId === r.id;
@@ -474,7 +452,13 @@ export default function MapTab({
         </div>
       </aside>
 
-      <StoreDrawer restaurant={selectedRestaurant} onClose={() => setSelectedId(null)} />
+      <StoreDrawer
+        restaurant={selectedRestaurant}
+        onClose={() => {
+          if (externalRestaurant) onExternalRestaurantClose?.();
+          setSelectedId(null);
+        }}
+      />
     </div>
   );
 }

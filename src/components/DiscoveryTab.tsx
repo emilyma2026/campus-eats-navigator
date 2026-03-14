@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Star, Clock, Tag, MapPin, ChevronRight } from 'lucide-react';
+import { Star, Tag, MapPin, ChevronRight, Navigation } from 'lucide-react';
 import MeituanLogo from './MeituanLogo';
 
 // ── Scene definitions with AMap search keywords ──────────────────────────────
@@ -43,12 +43,32 @@ interface POIResult {
   rating: number;
   distance: number;
   type: string;
+  lng: number;
+  lat: number;
+}
+
+/** Full POI info passed to parent when user taps "在地图上看" */
+export interface DiscoveryPOIInfo {
+  id: string;
+  name: string;
+  address: string;
+  rating: number;
+  distance: number;
+  type: string;
+  lng: number;
+  lat: number;
+}
+
+/** Format a distance in metres to a human-readable string */
+function distLabel(m: number): string {
+  if (m < 1000) return `${m} m`;
+  return `${(m / 1000).toFixed(1)} km`;
 }
 
 interface Props {
   center: [number, number];
   radiusM: number;
-  onViewOnMap: (id: string) => void;
+  onViewOnMap: (poi: DiscoveryPOIInfo) => void;
   /** Geocoded name of the current map anchor (e.g. "五角场街道"), defaults to "复旦管院" */
   locationName?: string;
 }
@@ -77,7 +97,8 @@ export default function DiscoveryTab({ center, radiusM, onViewOnMap, locationNam
     }
 
     const scene      = SCENES.find((s) => s.id === sceneId) ?? SCENES[0];
-    const fetchRadius = Math.max(radiusMRef.current, 500); // at least 500 m
+    // Always search a 5 km radius to cover the full university city area
+    const fetchRadius = 5000;
 
     setLoading(true);
 
@@ -89,16 +110,20 @@ export default function DiscoveryTab({ center, radiusM, onViewOnMap, locationNam
         setLoading(false);
 
         if (status === 'complete' && result.poiList?.pois?.length) {
-          const pois: POIResult[] = result.poiList.pois.map((poi: any) => ({
-            id:       poi.id,
-            name:     poi.name,
-            address:  poi.address || '',
-            rating:   poi.biz_ext?.rating
-              ? parseFloat(poi.biz_ext.rating)
-              : 3.5 + Math.random() * 1.5,
-            distance: poi.distance ? parseInt(poi.distance) : 0,
-            type:     poi.type || '',
-          }));
+          const pois: POIResult[] = result.poiList.pois
+            .filter((poi: any) => poi.location?.lng != null && poi.location?.lat != null)
+            .map((poi: any) => ({
+              id:       poi.id,
+              name:     poi.name,
+              address:  poi.address || '',
+              rating:   poi.biz_ext?.rating
+                ? parseFloat(poi.biz_ext.rating)
+                : 3.5 + Math.random() * 1.5,
+              distance: poi.distance ? parseInt(poi.distance) : 0,
+              type:     poi.type || '',
+              lng:      poi.location.lng,
+              lat:      poi.location.lat,
+            }));
 
           // Sort: rating desc, then distance asc
           pois.sort((a, b) => {
@@ -123,8 +148,7 @@ export default function DiscoveryTab({ center, radiusM, onViewOnMap, locationNam
   const enriched = useMemo(() =>
     results.map((r) => ({
       ...r,
-      walkMins: Math.max(1, Math.round(r.distance / 80)),
-      tags:     parseTypeTags(r.type),
+      tags: parseTypeTags(r.type),
       ...getDealFlags(r.id),
     })),
     [results],
@@ -137,7 +161,7 @@ export default function DiscoveryTab({ center, radiusM, onViewOnMap, locationNam
       <div className="px-4 pt-5 pb-3 bg-card border-b border-border">
         <h1 className="text-xl font-extrabold tracking-tight mb-0.5">发现美食</h1>
         <p className="text-xs text-muted-foreground mb-3 truncate">
-          📍 <span className="font-semibold">{locationName || '复旦管院'}</span> 周边 · 按口碑排名
+          📍 <span className="font-semibold">{locationName || '复旦管院'}</span> 周边 5 km · 按口碑排名
         </p>
 
         {/* Scene chips */}
@@ -229,7 +253,7 @@ export default function DiscoveryTab({ center, radiusM, onViewOnMap, locationNam
                 {/* Meta row */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Clock size={10} /> 🕒 {r.walkMins}min
+                    <Navigation size={10} /> {distLabel(r.distance)}
                   </span>
                   {r.studentDeal && (
                     <span className="flex items-center gap-1 px-2 py-0.5 bg-[#FFD000]/15 text-[10px] font-bold rounded-full">
@@ -250,7 +274,7 @@ export default function DiscoveryTab({ center, radiusM, onViewOnMap, locationNam
 
                 {/* View on Map CTA */}
                 <button
-                  onClick={() => onViewOnMap(r.id)}
+                  onClick={() => onViewOnMap({ id: r.id, name: r.name, address: r.address, rating: r.rating, distance: r.distance, type: r.type, lng: r.lng, lat: r.lat })}
                   className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-[#FFD000] text-xs font-bold text-black hover:bg-[#FFD000] transition-colors active:scale-[0.98]"
                 >
                   <MapPin size={11} />

@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import BottomNav, { Tab } from '@/components/BottomNav';
-import DiscoveryTab from '@/components/DiscoveryTab';
+import DiscoveryTab, { DiscoveryPOIInfo } from '@/components/DiscoveryTab';
 import MapTab from '@/components/MapTab';
 import CommunityTab from '@/components/CommunityTab';
 import OnboardingOverlay from '@/components/OnboardingOverlay';
@@ -9,6 +9,7 @@ import TopHeader from '@/components/TopHeader';
 import SettingsModal from '@/components/SettingsModal';
 import NotificationModal from '@/components/NotificationModal';
 import { POIRestaurant } from '@/components/AMapContainer';
+import { EnrichedRestaurant } from '@/components/StoreDrawer';
 
 const FUDAN_CENTER: [number, number] = [121.5132, 31.2995];
 
@@ -48,14 +49,32 @@ const Index = () => {
   const [sharedLocationName, setSharedLocationName] = useState<string>('复旦管院');
 
   // ── Tab & restaurant state ──────────────────────────────────────────────
-  const [activeTab,    setActiveTab]    = useState<Tab>('map');
-  const [restaurants,  setRestaurants]  = useState<POIRestaurant[]>([]);
-  const [highlightId,  setHighlightId]  = useState<string | null>(null);
+  const [activeTab,          setActiveTab]          = useState<Tab>('map');
+  const [restaurants,        setRestaurants]        = useState<POIRestaurant[]>([]);
+  const [highlightId,        setHighlightId]        = useState<string | null>(null);
+  const [externalRestaurant, setExternalRestaurant] = useState<EnrichedRestaurant | null>(null);
 
-  const handleViewOnMap = useCallback((id: string) => {
-    setHighlightId(id);
+  const handleViewOnMap = useCallback((poi: DiscoveryPOIInfo) => {
+    // Try to match against already-loaded map restaurants first
+    const match = restaurants.find((r) => r.id === poi.id);
+    if (match) {
+      setExternalRestaurant(null);
+      setHighlightId(match.id);
+    } else {
+      // Build an EnrichedRestaurant from the discovery POI to show in StoreDrawer
+      const hash = poi.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+      setExternalRestaurant({
+        ...poi,
+        walkMins:      Math.max(1, Math.round(poi.distance / 80)),
+        studentDeal:   hash % 3 === 0,
+        meituanVoucher: hash % 4 === 0,
+        crowdLevel:    (['low', 'medium', 'high'] as const)[hash % 3],
+        waitMins:      0,
+      });
+      setHighlightId(null);
+    }
     setActiveTab('map');
-  }, []);
+  }, [restaurants]);
 
   const handleRestaurantsLoaded = useCallback((pois: POIRestaurant[]) => {
     setRestaurants(pois);
@@ -86,9 +105,30 @@ const Index = () => {
       r.name.toLowerCase().includes(shopName.toLowerCase()) ||
       shopName.toLowerCase().includes(r.name.toLowerCase()),
     );
-    if (match) setHighlightId(match.id);
+    if (match) {
+      setExternalRestaurant(null);
+      setHighlightId(match.id);
+    } else {
+      // No real POI found – create a placeholder to show partial info in drawer
+      const hash = shopName.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+      setExternalRestaurant({
+        id:            `community-${hash}`,
+        name:          shopName,
+        address:       '校园周边',
+        rating:        4.0 + (hash % 10) / 10,
+        distance:      100 + (hash % 500),
+        type:          '餐饮服务',
+        lng:           sharedCenter[0],
+        lat:           sharedCenter[1],
+        walkMins:      Math.max(1, Math.round((100 + hash % 500) / 80)),
+        studentDeal:   hash % 3 === 0,
+        meituanVoucher: hash % 4 === 0,
+        crowdLevel:    (['low', 'medium', 'high'] as const)[hash % 3],
+        waitMins:      0,
+      });
+    }
     setActiveTab('map');
-  }, [restaurants]);
+  }, [restaurants, sharedCenter]);
 
   return (
     <div className="flex flex-col h-screen w-full overflow-hidden bg-background">
@@ -114,6 +154,8 @@ const Index = () => {
             onLocationChange={handleLocationChange}
             onRadiusChange={handleRadiusChange}
             onAddressChange={handleAddressChange}
+            externalRestaurant={externalRestaurant}
+            onExternalRestaurantClose={() => setExternalRestaurant(null)}
           />
         </div>
 
