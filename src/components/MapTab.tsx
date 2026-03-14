@@ -13,9 +13,9 @@ import { getActiveClass, getClassStatus } from '@/data/scheduleData';
 type TransportMode = 'walk' | 'bike' | 'drive';
 
 const TRANSPORT: Record<TransportMode, { label: string; icon: React.ElementType; speed: number; unit: string }> = {
-  walk:  { label: '步行', icon: Footprints, speed: 75,  unit: '步行' },
-  bike:  { label: '骑行', icon: Bike,       speed: 200, unit: '骑行' },
-  drive: { label: '驾车', icon: Car,        speed: 350, unit: '驾车' },
+  walk:  { label: '步行', icon: Footprints, speed: 80,  unit: '步行' }, // ≈3.2 km/40 min
+  bike:  { label: '骑行', icon: Bike,       speed: 250, unit: '骑行' }, // ≈7.5 km/30 min
+  drive: { label: '驾车', icon: Car,        speed: 500, unit: '驾车' }, // ≈10 km/20 min
 };
 
 const MAX_TIME: Record<TransportMode, number> = {
@@ -70,6 +70,8 @@ interface Props {
   onHighlightClear: () => void;
   onLocationChange?: (loc: [number, number]) => void;
   onRadiusChange?: (radiusM: number) => void;
+  /** Lift the geocoded address string up to Index → DiscoveryTab header */
+  onAddressChange?: (addr: string) => void;
 }
 
 export default function MapTab({
@@ -78,16 +80,19 @@ export default function MapTab({
   onHighlightClear,
   onLocationChange,
   onRadiusChange,
+  onAddressChange: onAddressChangeProp,
 }: Props) {
-  const [walkTime,       setWalkTime]       = useState(10);
-  const [transportMode,  setTransportMode]  = useState<TransportMode>('walk');
-  const [selectedId,     setSelectedId]     = useState<string | null>(null);
-  const [activeFilters,  setActiveFilters]  = useState<string[]>([]);
-  const [restaurants,    setRestaurants]    = useState<POIRestaurant[]>([]);
-  const [isRelocated,    setIsRelocated]    = useState(false);
-  const [currentAddress, setCurrentAddress] = useState('');
-  const [searchText,     setSearchText]     = useState('');
+  const [walkTime,           setWalkTime]           = useState(10);
+  const [transportMode,      setTransportMode]      = useState<TransportMode>('walk');
+  const [selectedId,         setSelectedId]         = useState<string | null>(null);
+  const [activeFilters,      setActiveFilters]      = useState<string[]>([]);
+  const [restaurants,        setRestaurants]        = useState<POIRestaurant[]>([]);
+  const [isRelocated,        setIsRelocated]        = useState(false);
+  const [currentAddress,     setCurrentAddress]     = useState('');
+  const [searchText,         setSearchText]         = useState('');
   const [autoCompleteCenter, setAutoCompleteCenter] = useState<[number, number] | undefined>(undefined);
+  /** Incremented on slider mouse/touch-up to trigger an exact-radius API re-fetch */
+  const [sliderFetchTrigger, setSliderFetchTrigger] = useState(0);
 
   // Tick every minute to keep smart-banner fresh without extra API calls
   const [, forceUpdate] = useState(0);
@@ -153,6 +158,11 @@ export default function MapTab({
     onRadiusChange?.(radiusM);
   }, [onRadiusChange]);
 
+  const handleAddressChange = useCallback((addr: string) => {
+    setCurrentAddress(addr);
+    onAddressChangeProp?.(addr);
+  }, [onAddressChangeProp]);
+
   useEffect(() => {
     if (highlightId) { setSelectedId(highlightId); onHighlightClear(); }
   }, [highlightId, onHighlightClear]);
@@ -193,8 +203,9 @@ export default function MapTab({
           speedMPerMin={speedMPerMin}
           initialCenter={initialCenter}
           externalCenter={autoCompleteCenter}
+          triggerExactFetch={sliderFetchTrigger}
           onPOIResults={handlePOIResults}
-          onAddressChange={setCurrentAddress}
+          onAddressChange={handleAddressChange}
           onRadiusChange={handleRadiusChange}
           selectedId={selectedId}
           onPinClick={(id) => setSelectedId((prev) => prev === id ? null : id)}
@@ -259,16 +270,6 @@ export default function MapTab({
           <div className="px-4 pt-3">
             <ScheduleTimeline isRelocated={isRelocated} />
           </div>
-
-          {/* Geocoded address */}
-          {currentAddress && (
-            <div className="px-4 pt-2">
-              <p className="text-[11px] text-muted-foreground flex items-center gap-1 truncate">
-                <MapPin size={9} className="shrink-0 text-[#B8860B]" />
-                <span className="truncate">{currentAddress}</span>
-              </p>
-            </div>
-          )}
 
           {/* ── Smart Decision Banner ─────────────────────────────────────── */}
           {classStatus.type === 'in_class' && classStatus.timeLeft !== undefined && (
@@ -337,6 +338,8 @@ export default function MapTab({
             <input
               type="range" min="1" max={MAX_TIME[transportMode]} value={walkTime}
               onChange={(e) => { setWalkTime(parseInt(e.target.value)); setSelectedId(null); }}
+              onMouseUp={() => setSliderFetchTrigger((n) => n + 1)}
+              onTouchEnd={() => setSliderFetchTrigger((n) => n + 1)}
               className="w-full cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
@@ -388,7 +391,7 @@ export default function MapTab({
                           <span className="text-xs font-bold">{r.rating.toFixed(1)}</span>
                         </div>
                         <span className="flex items-center gap-1 text-xs text-orange-500 font-bold">
-                          <Clock size={10} /> {r.walkMins}分钟
+                          <Clock size={10} /> {r.walkMins}min
                         </span>
                         {/* Crowd badge */}
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${CROWD_CLASS[r.crowdLevel]}`}>

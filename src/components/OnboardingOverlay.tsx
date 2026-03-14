@@ -108,8 +108,8 @@ export default function OnboardingOverlay({ onComplete }: Props) {
 
   // Two focused presets that map directly to dining strategies
   const PRESETS = [
-    { label: '15分', sublabel: '堂食冲刺', value: 15 },
-    { label: '30分', sublabel: '外卖布局', value: 30 },
+    { label: '15分', sublabel: '堂食模式', value: 15 },
+    { label: '30分', sublabel: '外卖模式', value: 30 },
   ];
 
   const handleUpload = () => {

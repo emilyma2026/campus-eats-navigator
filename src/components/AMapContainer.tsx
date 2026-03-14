@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 
 export interface POIRestaurant {
   id: string;
@@ -13,9 +13,11 @@ export interface POIRestaurant {
 
 interface AMapContainerProps {
   walkTime: number;
-  speedMPerMin?: number;             // 75 walk | 200 bike | 350 drive
+  speedMPerMin?: number;             // 80 walk | 250 bike | 500 drive
   initialCenter?: [number, number];
   externalCenter?: [number, number]; // pushed in from search bar / AutoComplete
+  /** Increment to trigger a fresh API fetch at the exact current radius (slider drag-end) */
+  triggerExactFetch?: number;
   onPOIResults: (restaurants: POIRestaurant[]) => void;
   onAddressChange?: (addr: string) => void;
   onRadiusChange?: (radiusM: number) => void;
@@ -28,16 +30,17 @@ const FALLBACK_CENTER: [number, number] = [121.5132, 31.2995]; // Fudan Handan
 
 /** Pre-load a larger radius so slider filtering is instant (no extra API calls). */
 function maxFetchRadius(speed: number): number {
-  if (speed <= 100) return 3000; // walk  ≤40 min @ 75 m/min
-  if (speed <= 250) return 6000; // bike  ≤30 min @ 200 m/min
-  return 7000;                   // drive ≤20 min @ 350 m/min
+  if (speed <= 100)  return 3200;  // walk  ≤40 min @ 80 m/min  → 3.2 km
+  if (speed <= 300)  return 7500;  // bike  ≤30 min @ 250 m/min → 7.5 km
+  return 10000;                    // drive ≤20 min @ 500 m/min → 10 km
 }
 
 export default function AMapContainer({
   walkTime,
-  speedMPerMin = 75,
+  speedMPerMin = 80,
   initialCenter,
   externalCenter,
+  triggerExactFetch,
   onPOIResults,
   onAddressChange,
   onRadiusChange,
@@ -45,6 +48,8 @@ export default function AMapContainer({
   onPinClick,
   onLocationChange,
 }: AMapContainerProps) {
+  const [centerLabel, setCenterLabel] = useState('');
+
   const mapRef            = useRef<HTMLDivElement>(null);
   const mapInstanceRef    = useRef<any>(null);
   const markersRef        = useRef<any[]>([]);
@@ -52,6 +57,7 @@ export default function AMapContainer({
   const geocoderRef       = useRef<any>(null);
   const circleRef         = useRef<any>(null);
   const userPinRef        = useRef<any>(null);
+  const moveDebounceRef   = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Captured once at mount so map init effect is stable
   const mountCenter = useRef<[number, number]>(initialCenter ?? FALLBACK_CENTER);
@@ -102,7 +108,7 @@ export default function AMapContainer({
     }
   }, []);
 
-  // ── Geocode current center → emit human-readable address ─────────────────
+  // ── Geocode current center → emit human-readable address + seed floating label ─
   const geocodeCenter = useCallback((center: [number, number]) => {
     if (!geocoderRef.current) return;
     geocoderRef.current.getAddress(center, (status: string, result: any) => {
@@ -111,9 +117,13 @@ export default function AMapContainer({
         // Strip country / province prefix for concise display
         const addr = raw.replace(/^中国(上海市?)?/, '').replace(/^上海市?/, '');
         onAddressChangeRef.current?.(addr || raw);
+        // Seed floating center label: prefer nearest POI name, fallback to short addr
+        const poi0 = result.regeocode.pois?.[0]?.name as string | undefined;
+        const short = poi0 || addr.split('·').pop()?.trim() || addr.slice(0, 12);
+        setCenterLabel(short || addr);
       }
     });
-  }, []);
+  }, [setCenterLabel]);
 
   // ── Marker rendering ─────────────────────────────────────────────────────
   const updateMarkers = useCallback((map: any, pois: POIRestaurant[]) => {
@@ -133,7 +143,7 @@ export default function AMapContainer({
           transform:${isSel ? 'scale(1.25)' : 'scale(1)'};
           border:${isSel ? '2px solid white' : '1.5px solid rgba(0,0,0,0.1)'};
           animation:bb-marker-in 0.18s ease;
-        ">${mins}分</div>`,
+        ">🕒${mins}min</div>`,
         offset: new window.AMap.Pixel(-20, -10),
         zIndex: isSel ? 150 : 100,
       });
@@ -184,6 +194,38 @@ export default function AMapContainer({
       }
     });
   }, [updateMarkers, updateCircle, geocodeCenter]);
+
+  // ── EXACT FETCH: slider drag-end → fresh API call at precise radius ─────
+  const fetchExact = useCallback((map: any, center: [number, number]) => {
+    if (!window.AMap || !searchRef.current) return;
+    const radiusM = Math.max(walkTimeRef.current * speedRef.current, 100);
+    searchRef.current.searchNearBy('餐饮', center, radiusM, (status: string, result: any) => {
+      if (status === 'complete' && result.poiList) {
+        const pois: POIRestaurant[] = result.poiList.pois
+          .map((poi: any) => ({
+            id:       poi.id,
+            name:     poi.name,
+            lng:      poi.location.lng,
+            lat:      poi.location.lat,
+            rating:   poi.biz_ext?.rating ? parseFloat(poi.biz_ext.rating) : 3.5 + Math.random() * 1.5,
+            address:  poi.address || '',
+            type:     poi.type || '',
+            distance: poi.distance ? parseInt(poi.distance) : 0,
+          }));
+        // Results already scoped to exact radius – update cache, clear & redraw markers
+        allPoisRef.current = pois;
+        onPOIResultsRef.current(pois);
+        updateMarkers(map, pois);
+        updateCircle(map, center);
+      }
+    });
+  }, [updateMarkers, updateCircle]);
+
+  // ── Reactive: triggerExactFetch counter → precision re-fetch on drag-end ─
+  useEffect(() => {
+    if (!triggerExactFetch || !mapInstanceRef.current) return;
+    fetchExact(mapInstanceRef.current, searchCenterRef.current);
+  }, [triggerExactFetch, fetchExact]);
 
   // ── Reactive: walkTime slider → instant LOCAL filter + update circle ──────
   useEffect(() => {
@@ -292,7 +334,31 @@ export default function AMapContainer({
       onLocationChangeRef.current?.(nl);
     });
 
-    return () => { mapInstanceRef.current?.destroy(); };
+    // Map pan → update floating center label (debounced, no API search call)
+    map.on('moveend', () => {
+      if (moveDebounceRef.current) clearTimeout(moveDebounceRef.current);
+      moveDebounceRef.current = setTimeout(() => {
+        if (!geocoderRef.current || !mapInstanceRef.current) return;
+        const c = mapInstanceRef.current.getCenter();
+        geocoderRef.current.getAddress(
+          [c.lng, c.lat],
+          (status: string, result: any) => {
+            if (status === 'complete' && result.regeocode) {
+              const raw: string = result.regeocode.formattedAddress || '';
+              const addr = raw.replace(/^中国(上海市?)?/, '').replace(/^上海市?/, '');
+              const poi0 = result.regeocode.pois?.[0]?.name as string | undefined;
+              const short = poi0 || addr.split('·').pop()?.trim() || addr.slice(0, 12);
+              setCenterLabel(short || addr);
+            }
+          },
+        );
+      }, 800);
+    });
+
+    return () => {
+      if (moveDebounceRef.current) clearTimeout(moveDebounceRef.current);
+      mapInstanceRef.current?.destroy();
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Re-render markers + pan to selected pin ───────────────────────────────
@@ -319,6 +385,20 @@ export default function AMapContainer({
         .amap-sug-result { z-index:9999 !important; }
       `}</style>
       <div ref={mapRef} className="absolute inset-0" />
+
+      {/* ── Floating location label — anchored just below the search bar ── */}
+      {centerLabel && (
+        <div
+          className="absolute pointer-events-none z-10"
+          style={{ top: '57px', left: '12px', right: '12px' }}
+        >
+          <div className="flex justify-center">
+            <div className="inline-flex items-center gap-1 bg-black/45 backdrop-blur-sm text-white text-[11px] font-medium px-3 py-1 rounded-full shadow-md max-w-[220px]">
+              <span className="truncate">📍 {centerLabel}</span>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

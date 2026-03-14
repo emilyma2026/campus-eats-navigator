@@ -47,9 +47,11 @@ interface Props {
   center: [number, number];
   radiusM: number;
   onViewOnMap: (id: string) => void;
+  /** Geocoded name of the current map anchor (e.g. "五角场街道"), defaults to "复旦管院" */
+  locationName?: string;
 }
 
-export default function DiscoveryTab({ center, radiusM, onViewOnMap }: Props) {
+export default function DiscoveryTab({ center, radiusM, onViewOnMap, locationName }: Props) {
   const [activeScene, setActiveScene] = useState('all');
   const [results,     setResults]     = useState<POIResult[]>([]);
   const [loading,     setLoading]     = useState(false);
@@ -119,7 +121,7 @@ export default function DiscoveryTab({ center, radiusM, onViewOnMap }: Props) {
   const enriched = useMemo(() =>
     results.map((r) => ({
       ...r,
-      walkMins: Math.max(1, Math.round(r.distance / 75)),
+      walkMins: Math.max(1, Math.round(r.distance / 80)),
       tags:     parseTypeTags(r.type),
       ...getDealFlags(r.id),
     })),
@@ -132,7 +134,9 @@ export default function DiscoveryTab({ center, radiusM, onViewOnMap }: Props) {
       {/* Header */}
       <div className="px-4 pt-5 pb-3 bg-card border-b border-border">
         <h1 className="text-xl font-extrabold tracking-tight mb-0.5">发现美食</h1>
-        <p className="text-xs text-muted-foreground mb-3">复旦管院周边 · 按口碑排名</p>
+        <p className="text-xs text-muted-foreground mb-3 truncate">
+          📍 <span className="font-semibold">{locationName || '复旦管院'}</span> 周边 · 按口碑排名
+        </p>
 
         {/* Scene chips */}
         <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
@@ -223,7 +227,7 @@ export default function DiscoveryTab({ center, radiusM, onViewOnMap }: Props) {
                 {/* Meta row */}
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Clock size={10} /> {r.walkMins}分钟步行
+                    <Clock size={10} /> 🕒 {r.walkMins}min
                   </span>
                   {r.studentDeal && (
                     <span className="flex items-center gap-1 px-2 py-0.5 bg-[#FFD000]/15 text-[10px] font-bold rounded-full">

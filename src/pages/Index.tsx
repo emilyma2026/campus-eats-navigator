@@ -28,8 +28,9 @@ const Index = () => {
   }, []);
 
   // ── Shared geo state (synced from MapTab → used by DiscoveryTab) ────────
-  const [sharedCenter, setSharedCenter] = useState<[number, number]>(FUDAN_CENTER);
-  const [sharedRadius, setSharedRadius] = useState<number>(750); // 10 min × 75 m/min
+  const [sharedCenter,       setSharedCenter]       = useState<[number, number]>(FUDAN_CENTER);
+  const [sharedRadius,       setSharedRadius]       = useState<number>(800); // 10 min × 80 m/min
+  const [sharedLocationName, setSharedLocationName] = useState<string>('复旦管院');
 
   // ── Tab & restaurant state ──────────────────────────────────────────────
   const [activeTab,    setActiveTab]    = useState<Tab>('map');
@@ -52,6 +53,16 @@ const Index = () => {
 
   const handleRadiusChange = useCallback((radiusM: number) => {
     setSharedRadius(radiusM);
+  }, []);
+
+  /** Receive geocoded address from MapTab → strip verbose prefix → show in DiscoveryTab */
+  const handleAddressChange = useCallback((addr: string) => {
+    // Extract the most meaningful short segment (e.g. "五角场街道" from "杨浦区·五角场街道")
+    const short =
+      addr.split('·').pop()?.trim() ||
+      addr.replace(/^.*?区/, '').trim() ||
+      addr.slice(0, 8);
+    setSharedLocationName(short || addr);
   }, []);
 
   // Called from CommunityTab when user taps a shop name
@@ -83,6 +94,7 @@ const Index = () => {
             onHighlightClear={() => setHighlightId(null)}
             onLocationChange={handleLocationChange}
             onRadiusChange={handleRadiusChange}
+            onAddressChange={handleAddressChange}
           />
         </div>
 
@@ -91,6 +103,7 @@ const Index = () => {
             <DiscoveryTab
               center={sharedCenter}
               radiusM={sharedRadius}
+              locationName={sharedLocationName}
               onViewOnMap={handleViewOnMap}
             />
           </div>
