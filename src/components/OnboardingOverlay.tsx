@@ -106,10 +106,10 @@ export default function OnboardingOverlay({ onComplete }: Props) {
   const [uploading,       setUploading]       = useState(false);
   const [uploadDone,      setUploadDone]      = useState(false);
 
+  // Two focused presets that map directly to dining strategies
   const PRESETS = [
-    { label: '30分', value: 30 },
-    { label: '45分', value: 45 },
-    { label: '1小时', value: 60 },
+    { label: '15分', sublabel: '堂食冲刺', value: 15 },
+    { label: '30分', sublabel: '外卖布局', value: 30 },
   ];
 
   const handleUpload = () => {
@@ -156,17 +156,18 @@ export default function OnboardingOverlay({ onComplete }: Props) {
         <div className="space-y-2">
           <label className="text-sm font-bold">下课提醒时间</label>
           <div className="flex gap-2">
-            {PRESETS.map(({ label, value }) => (
+            {PRESETS.map(({ label, sublabel, value }) => (
               <button
                 key={value}
                 onClick={() => { setRemindMins(value); setUseCustom(false); }}
-                className={`flex-1 py-3 rounded-2xl font-bold text-sm border-2 transition-all ${
+                className={`flex-1 py-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-0.5 ${
                   !useCustom && remindMins === value
                     ? 'bg-[#FFD000] border-[#FFD000] text-black shadow-sm'
                     : 'border-border text-muted-foreground hover:border-yellow-300'
                 }`}
               >
-                {label}
+                <span className="font-black text-base leading-none">{label}</span>
+                <span className="text-[10px] font-semibold leading-none opacity-70">{sublabel}</span>
               </button>
             ))}
             <button
@@ -221,7 +222,11 @@ export default function OnboardingOverlay({ onComplete }: Props) {
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">开启通知</p>
-                  <p className="text-[11px] text-muted-foreground truncate">下课前 {remindMins >= 60 ? `${remindMins / 60}小时` : `${remindMins}分钟`} 推送美食</p>
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    {remindMins <= 15
+                      ? `提前 ${remindMins} 分钟提醒，下课冲刺堂食 🍽️`
+                      : `提前 ${remindMins >= 60 ? `${remindMins / 60}小时` : `${remindMins}分钟`} 预警，从容布局外卖 🛵`}
+                  </p>
                 </div>
               </div>
               <Toggle checked={enableNotifs} onChange={setEnableNotifs} />

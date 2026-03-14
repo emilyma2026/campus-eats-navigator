@@ -87,12 +87,20 @@ export default function ScheduleTimeline({ isRelocated = false }: Props) {
               </div>
 
               {/* Course name + time (graceful collapse for small blocks) */}
-              {blockPx >= 30 && (
-                <div className="px-2 pb-1 flex-1 flex flex-col justify-center min-h-0">
-                  <span className="text-[10px] font-bold text-foreground/90 truncate leading-tight">
+              {blockPx >= 22 && (
+                <div className="px-2 pb-1 flex-1 flex flex-col justify-center min-h-0 overflow-hidden">
+                  <span
+                    className="text-[10px] font-bold text-foreground/90 leading-tight break-words"
+                    style={{
+                      display: '-webkit-box',
+                      WebkitLineClamp: blockPx >= 44 ? 2 : 1,
+                      WebkitBoxOrient: 'vertical' as const,
+                      overflow: 'hidden',
+                    }}
+                  >
                     {cls.name}
                   </span>
-                  {blockPx >= 38 && (
+                  {blockPx >= 40 && (
                     <span className="text-[8px] text-foreground/60 leading-none mt-0.5 tabular-nums">
                       {`${cls.startHour}:${String(cls.startMin).padStart(2, '0')}–${cls.endHour}:${String(cls.endMin).padStart(2, '0')}`}
                     </span>

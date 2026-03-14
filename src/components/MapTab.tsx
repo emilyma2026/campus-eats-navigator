@@ -5,9 +5,9 @@ import {
 } from 'lucide-react';
 import ScheduleTimeline from './ScheduleTimeline';
 import AMapContainer, { POIRestaurant } from './AMapContainer';
-import StoreDrawer, { EnrichedRestaurant } from './StoreDrawer';
+import StoreDrawer, { EnrichedRestaurant, CrowdLevel } from './StoreDrawer';
 import MeituanLogo from './MeituanLogo';
-import { getActiveClass } from '@/data/scheduleData';
+import { getActiveClass, getClassStatus } from '@/data/scheduleData';
 
 // ── Transport config ─────────────────────────────────────────────────────────
 type TransportMode = 'walk' | 'bike' | 'drive';
@@ -37,6 +37,33 @@ const getDealFlags = (id: string) => {
   return { studentDeal: h % 3 === 0, meituanVoucher: h % 4 === 0 };
 };
 
+/** Deterministic crowd level — base from ID hash, scaled up during peak hours. */
+function getCrowdInfo(id: string): { crowdLevel: CrowdLevel; waitMins: number } {
+  const hash  = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  const hour  = new Date().getHours();
+  const isPeak = (hour >= 11 && hour < 13) || (hour >= 17 && hour < 19);
+
+  // During peak: slot 1-3 (min medium), off-peak: slot 0-2 (mostly low)
+  const slot  = isPeak ? (hash % 3) + 1 : hash % 3;
+  const crowdLevel: CrowdLevel = slot <= 1 ? 'low' : slot === 2 ? 'medium' : 'high';
+  const waitMins = crowdLevel === 'low' ? 0
+    : crowdLevel === 'medium' ? 5  + (hash % 6)
+    :                           10 + (hash % 11);
+
+  return { crowdLevel, waitMins };
+}
+
+const CROWD_LABEL: Record<CrowdLevel, string> = {
+  low:    '🟢 客少',
+  medium: '🟡 一般',
+  high:   '🔴 人多',
+};
+const CROWD_CLASS: Record<CrowdLevel, string> = {
+  low:    'bg-green-100 text-green-700',
+  medium: 'bg-yellow-100 text-yellow-700',
+  high:   'bg-red-100 text-red-700',
+};
+
 interface Props {
   onRestaurantsLoaded: (restaurants: POIRestaurant[]) => void;
   highlightId: string | null;
@@ -60,18 +87,24 @@ export default function MapTab({
   const [isRelocated,    setIsRelocated]    = useState(false);
   const [currentAddress, setCurrentAddress] = useState('');
   const [searchText,     setSearchText]     = useState('');
-
-  // externalCenter: set by AutoComplete selection → pushed into AMapContainer
   const [autoCompleteCenter, setAutoCompleteCenter] = useState<[number, number] | undefined>(undefined);
+
+  // Tick every minute to keep smart-banner fresh without extra API calls
+  const [, forceUpdate] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => forceUpdate((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const searchInputRef  = useRef<HTMLInputElement>(null);
   const autoCompleteRef = useRef<any>(null);
 
   const speedMPerMin  = TRANSPORT[transportMode].speed;
   const activeClass   = getActiveClass();
+  const classStatus   = getClassStatus();
   const initialCenter = activeClass?.campusCoords ?? [121.5132, 31.2995] as [number, number];
 
-  // ── AutoComplete init (after mount, once AMap is available) ──────────────
+  // ── AutoComplete init ─────────────────────────────────────────────────────
   useEffect(() => {
     const init = () => {
       if (!window.AMap || autoCompleteRef.current) return;
@@ -90,8 +123,6 @@ export default function MapTab({
         });
       } catch (_) { /* AMap not ready yet */ }
     };
-
-    // Slight delay to let AMap finish loading
     const t = setTimeout(init, 600);
     return () => clearTimeout(t);
   }, []);
@@ -129,11 +160,13 @@ export default function MapTab({
   const toggleFilter = (label: string) =>
     setActiveFilters((prev) => prev.includes(label) ? prev.filter((f) => f !== label) : [...prev, label]);
 
+  // ── Enriched restaurants (crowd info computed client-side) ───────────────
   const enriched = useMemo<EnrichedRestaurant[]>(() =>
     restaurants.map((r) => ({
       ...r,
       walkMins: Math.max(1, Math.round(r.distance / speedMPerMin)),
       ...getDealFlags(r.id),
+      ...getCrowdInfo(r.id),
     })),
     [restaurants, speedMPerMin],
   );
@@ -148,8 +181,6 @@ export default function MapTab({
   }, [enriched, activeFilters]);
 
   const selectedRestaurant = enriched.find((r) => r.id === selectedId) ?? null;
-
-  // km label below slider
   const distKm = Math.round(walkTime * speedMPerMin / 100) / 10;
 
   return (
@@ -170,7 +201,7 @@ export default function MapTab({
           onLocationChange={handleLocationChange}
         />
 
-        {/* ── Search bar overlay ─────────────────────────────────────────── */}
+        {/* Search bar overlay */}
         <div className="absolute top-3 left-3 right-3 z-20">
           <div className="relative">
             <Search
@@ -211,7 +242,7 @@ export default function MapTab({
         </div>
       </section>
 
-      {/* ── RIGHT: Calendar-driven Feed ────────────────────────────────────── */}
+      {/* ── RIGHT: Feed ────────────────────────────────────────────────────── */}
       <aside className="w-[340px] h-full bg-card border-l border-border flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto custom-scrollbar">
 
@@ -229,7 +260,7 @@ export default function MapTab({
             <ScheduleTimeline isRelocated={isRelocated} />
           </div>
 
-          {/* Geocoded address display */}
+          {/* Geocoded address */}
           {currentAddress && (
             <div className="px-4 pt-2">
               <p className="text-[11px] text-muted-foreground flex items-center gap-1 truncate">
@@ -239,9 +270,45 @@ export default function MapTab({
             </div>
           )}
 
+          {/* ── Smart Decision Banner ─────────────────────────────────────── */}
+          {classStatus.type === 'in_class' && classStatus.timeLeft !== undefined && (
+            <div className="px-4 pt-3">
+              {classStatus.timeLeft > 30 ? (
+                <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-2xl p-3">
+                  <span className="text-base shrink-0">🛵</span>
+                  <div>
+                    <p className="text-xs font-black text-blue-700">外卖窗口已开启</p>
+                    <p className="text-[11px] text-blue-600 leading-tight mt-0.5">
+                      还有 <b>{classStatus.timeLeft}</b> 分钟下课，现在下单外卖刚好到
+                    </p>
+                  </div>
+                </div>
+              ) : classStatus.timeLeft <= 15 ? (
+                <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-2xl p-3">
+                  <span className="text-base shrink-0">🏃</span>
+                  <div>
+                    <p className="text-xs font-black text-red-700">冲刺堂食！选🟢客少的</p>
+                    <p className="text-[11px] text-red-600 leading-tight mt-0.5">
+                      仅剩 <b>{classStatus.timeLeft}</b> 分钟，避开🔴人多餐厅
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2.5 bg-green-50 border border-green-200 rounded-2xl p-3">
+                  <span className="text-base shrink-0">🍽️</span>
+                  <div>
+                    <p className="text-xs font-black text-green-700">堂食黄金时段</p>
+                    <p className="text-[11px] text-green-600 leading-tight mt-0.5">
+                      还有 <b>{classStatus.timeLeft}</b> 分钟，步行范围内选一家吧
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ── Transport + Walk Time ─────────────────────────────────────── */}
           <div className="px-4 pt-4">
-            {/* Transport mode — individual pill buttons */}
             <div className="flex gap-2 mb-3">
               {(Object.entries(TRANSPORT) as [TransportMode, typeof TRANSPORT[TransportMode]][]).map(([mode, cfg]) => {
                 const Icon   = cfg.icon;
@@ -298,7 +365,7 @@ export default function MapTab({
           {/* Restaurant List */}
           <div className="px-4 pt-4 pb-5">
             <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
-              下课吃什么 · {filtered.length} 家
+              下课吃什么 · <span className="text-foreground">{filtered.length}</span> 家
             </p>
             <div className="space-y-2">
               {filtered.sort((a, b) => a.walkMins - b.walkMins).map((r) => {
@@ -322,6 +389,10 @@ export default function MapTab({
                         </div>
                         <span className="flex items-center gap-1 text-xs text-orange-500 font-bold">
                           <Clock size={10} /> {r.walkMins}分钟
+                        </span>
+                        {/* Crowd badge */}
+                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${CROWD_CLASS[r.crowdLevel]}`}>
+                          {CROWD_LABEL[r.crowdLevel]}
                         </span>
                         {r.studentDeal && (
                           <span className="text-[10px] font-bold bg-[#FFD000] text-black px-1.5 py-0.5 rounded">学生价</span>

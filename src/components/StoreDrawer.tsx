@@ -3,6 +3,8 @@ import { Star, Clock, Tag, MapPin, ExternalLink, Navigation, AlertTriangle, Came
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer';
 import MeituanLogo from './MeituanLogo';
 
+export type CrowdLevel = 'low' | 'medium' | 'high';
+
 export interface EnrichedRestaurant {
   id: string;
   name: string;
@@ -13,6 +15,8 @@ export interface EnrichedRestaurant {
   walkMins: number;
   studentDeal: boolean;
   meituanVoucher: boolean;
+  crowdLevel: CrowdLevel;
+  waitMins: number;
 }
 
 interface Props {
@@ -66,6 +70,34 @@ export default function StoreDrawer({ restaurant, onClose }: Props) {
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Navigation size={15} className="shrink-0 text-[#FFD000]" />
                 <span>{restaurant.type || '餐饮'}</span>
+              </div>
+            </div>
+
+            {/* Crowd level + wait time badge */}
+            <div className={`flex items-center gap-3 rounded-2xl px-4 py-3 mb-4 ${
+              restaurant.crowdLevel === 'low'    ? 'bg-green-50  border border-green-200'  :
+              restaurant.crowdLevel === 'medium' ? 'bg-yellow-50 border border-yellow-200' :
+                                                   'bg-red-50    border border-red-200'
+            }`}>
+              <span className="text-xl">
+                {restaurant.crowdLevel === 'low' ? '🟢' : restaurant.crowdLevel === 'medium' ? '🟡' : '🔴'}
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className={`text-xs font-black ${
+                  restaurant.crowdLevel === 'low'    ? 'text-green-700'  :
+                  restaurant.crowdLevel === 'medium' ? 'text-yellow-700' : 'text-red-700'
+                }`}>
+                  {restaurant.crowdLevel === 'low'    ? '客流稀少 · 随时可去'  :
+                   restaurant.crowdLevel === 'medium' ? '人流一般 · 无需等位'  : '人流较多 · 需要等位'}
+                </p>
+                <p className={`text-[11px] mt-0.5 ${
+                  restaurant.crowdLevel === 'low'    ? 'text-green-600'  :
+                  restaurant.crowdLevel === 'medium' ? 'text-yellow-600' : 'text-red-600'
+                }`}>
+                  {restaurant.waitMins === 0
+                    ? '建议：直接堂食 ✅'
+                    : `预计等待约 ${restaurant.waitMins} 分钟 — 考虑外卖 🛵`}
+                </p>
               </div>
             </div>
 
