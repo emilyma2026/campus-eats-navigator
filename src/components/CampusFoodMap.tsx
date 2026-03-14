@@ -185,7 +185,7 @@ export default function CampusFoodMap() {
 
         {/* Map attribution */}
         <div className="absolute bottom-3 left-3 flex items-center gap-1.5 text-[10px] text-muted-foreground/50 font-medium">
-          <MapPinned size={10} /> UniEat Map · Wujiaochang
+          <MapPinned size={10} /> Bell Bite · Wujiaochang
         </div>
       </section>
 
