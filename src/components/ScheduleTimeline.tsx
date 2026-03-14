@@ -20,9 +20,10 @@ function timeToPercent(hour: number, min: number) {
 
 interface Props {
   isRelocated?: boolean;
+  remindMins?: number;
 }
 
-export default function ScheduleTimeline({ isRelocated = false }: Props) {
+export default function ScheduleTimeline({ isRelocated = false, remindMins }: Props) {
   // Use fixed demo time (12:00) — no interval needed; time is static
   const nowMins        = curMins(); // always 720 (12:00 PM)
   const nowHour        = Math.floor(nowMins / 60);
@@ -33,6 +34,19 @@ export default function ScheduleTimeline({ isRelocated = false }: Props) {
 
   const activeClass = getActiveClass();
   const status      = getClassStatus();
+
+  // Reminder indicator: find the first class whose end is still in the future
+  const remind = remindMins ?? parseInt(localStorage.getItem('bb-remind-mins') || '30');
+  const reminderClass = CLASSES.find((c) => c.endHour * 60 + c.endMin > nowMins);
+  const reminderAtMins = reminderClass
+    ? reminderClass.endHour * 60 + reminderClass.endMin - remind
+    : null;
+  const reminderPct = reminderAtMins !== null
+    ? timeToPercent(Math.floor(reminderAtMins / 60), reminderAtMins % 60)
+    : null;
+  const reminderLabel = reminderAtMins !== null
+    ? `${Math.floor(reminderAtMins / 60)}:${String(reminderAtMins % 60).padStart(2, '0')}`
+    : null;
 
   const footerCampus = isRelocated
     ? '当前地图锚点附近'
@@ -115,6 +129,18 @@ export default function ScheduleTimeline({ isRelocated = false }: Props) {
             </div>
           );
         })}
+
+        {/* ── Orange dashed reminder line ──────────────────────────────── */}
+        {reminderPct !== null && (
+          <div
+            className="absolute left-9 right-0 flex items-center z-10"
+            style={{ top: `${reminderPct}%` }}
+          >
+            <div className="w-3 h-3 rounded-full bg-orange-400 border-2 border-white shrink-0 -ml-1.5 flex items-center justify-center text-[6px]">🔔</div>
+            <div className="flex-1 border-t-2 border-dashed border-orange-400 opacity-80" />
+            <span className="text-[8px] font-black text-orange-500 tabular-nums ml-1 shrink-0">{reminderLabel}</span>
+          </div>
+        )}
 
         {/* ── Red current-time line (fixed demo 12:00) ────────────────── */}
         <div

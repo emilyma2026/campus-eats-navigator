@@ -1,7 +1,16 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Bell, BookOpen, MapPin, Check, ChevronDown } from 'lucide-react';
-import { CLASSES } from '@/data/scheduleData';
+import { CLASSES, curMins } from '@/data/scheduleData';
+
+/** Calculate the clock time when the reminder fires, given remindMins. */
+function getReminderTimeLabel(remindMins: number): string | null {
+  const now = curMins();
+  const cls = CLASSES.find((c) => c.endHour * 60 + c.endMin > now);
+  if (!cls) return null;
+  const fireAt = cls.endHour * 60 + cls.endMin - remindMins;
+  return `${Math.floor(fireAt / 60)}:${String(fireAt % 60).padStart(2, '0')}`;
+}
 
 interface Props {
   onComplete: (username: string, remindMins: number) => void;
@@ -215,8 +224,21 @@ export default function OnboardingOverlay({ onComplete }: Props) {
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
                 transition={{ duration: 0.22 }}
+                className="space-y-2"
               >
                 <WheelPicker value={remindMins} onChange={setRemindMins} />
+                {/* Reminder time preview */}
+                {(() => {
+                  const label = getReminderTimeLabel(remindMins);
+                  return label ? (
+                    <div className="flex items-center justify-center gap-1.5 py-2 bg-orange-50 border border-orange-200 rounded-xl">
+                      <span className="text-base">🔔</span>
+                      <span className="text-xs font-bold text-orange-700">
+                        将在 <span className="text-base font-black">{label}</span> 提醒你出发
+                      </span>
+                    </div>
+                  ) : null;
+                })()}
               </motion.div>
             )}
           </motion.div>

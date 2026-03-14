@@ -7,7 +7,7 @@ import ScheduleTimeline from './ScheduleTimeline';
 import AMapContainer, { POIRestaurant } from './AMapContainer';
 import StoreDrawer, { EnrichedRestaurant, CrowdLevel } from './StoreDrawer';
 import MeituanLogo from './MeituanLogo';
-import { getActiveClass, getClassStatus, CLASSES } from '@/data/scheduleData';
+import { getActiveClass, getClassStatus, CLASSES, curMins } from '@/data/scheduleData';
 
 // ── Transport config ─────────────────────────────────────────────────────────
 type TransportMode = 'walk' | 'bike' | 'drive';
@@ -36,14 +36,22 @@ const getDealFlags = (id: string) => {
   return { studentDeal: h % 3 === 0, meituanVoucher: h % 4 === 0 };
 };
 
-/** Deterministic crowd level — base from ID hash, scaled up during peak hours. */
+/** Deterministic crowd level — ~50% high, ~30% medium, ~20% low at peak hours. */
 function getCrowdInfo(id: string): { crowdLevel: CrowdLevel; waitMins: number } {
-  const hash  = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-  const hour  = new Date().getHours();
-  const isPeak = (hour >= 11 && hour < 13) || (hour >= 17 && hour < 19);
+  const hash   = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  // Use the demo clock (curMins=720 = 12:00) so peak detection is consistent
+  const demoHour = Math.floor(curMins() / 60);
+  const isPeak   = (demoHour >= 11 && demoHour < 13) || (demoHour >= 17 && demoHour < 19);
 
-  const slot  = isPeak ? (hash % 3) + 1 : hash % 3;
-  const crowdLevel: CrowdLevel = slot <= 1 ? 'low' : slot === 2 ? 'medium' : 'high';
+  // Off-peak: roughly equal thirds. Peak: bias heavily toward high.
+  const r = hash % 10;
+  let crowdLevel: CrowdLevel;
+  if (isPeak) {
+    crowdLevel = r <= 4 ? 'high' : r <= 7 ? 'medium' : 'low'; // 50% high, 30% medium, 20% low
+  } else {
+    crowdLevel = r <= 2 ? 'high' : r <= 5 ? 'medium' : 'low'; // 30% high, 30% medium, 40% low
+  }
+
   const waitMins = crowdLevel === 'low' ? 0
     : crowdLevel === 'medium' ? 5  + (hash % 6)
     :                           10 + (hash % 11);
@@ -205,10 +213,10 @@ export default function MapTab({
   const distKm = Math.round(walkTime * speedMPerMin / 100) / 10;
 
   return (
-    <div className="flex h-full w-full overflow-hidden bg-background">
+    <div className="flex flex-col md:flex-row h-full w-full overflow-hidden bg-background">
 
-      {/* ── LEFT: Map ──────────────────────────────────────────────────────── */}
-      <section className="relative flex-1 bg-muted overflow-hidden">
+      {/* ── Map: 45% height on mobile, flex-1 on desktop ──────────────────── */}
+      <section className="relative h-[42%] md:h-full md:flex-1 bg-muted overflow-hidden shrink-0">
         <AMapContainer
           walkTime={walkTime}
           speedMPerMin={speedMPerMin}
@@ -253,8 +261,8 @@ export default function MapTab({
 
       </section>
 
-      {/* ── RIGHT: Feed ────────────────────────────────────────────────────── */}
-      <aside className="w-[340px] h-full bg-card border-l border-border flex flex-col overflow-hidden">
+      {/* ── Feed: below map on mobile, fixed-width sidebar on desktop ─────── */}
+      <aside className="flex-1 md:flex-none md:w-[340px] h-full bg-card border-t md:border-t-0 md:border-l border-border flex flex-col overflow-hidden">
         <div className="flex-1 overflow-y-auto custom-scrollbar">
 
           {/* ── Schedule Section ────────────────────────────────────────── */}
@@ -289,7 +297,10 @@ export default function MapTab({
                       <ChevronUp size={14} />
                     </button>
                   </div>
-                  <ScheduleTimeline isRelocated={isRelocated} />
+                  <ScheduleTimeline
+                    isRelocated={isRelocated}
+                    remindMins={parseInt(localStorage.getItem('bb-remind-mins') || '30')}
+                  />
                 </div>
               )}
             </div>
