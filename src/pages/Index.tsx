@@ -8,6 +8,8 @@ import OnboardingOverlay from '@/components/OnboardingOverlay';
 import TopHeader from '@/components/TopHeader';
 import { POIRestaurant } from '@/components/AMapContainer';
 
+const FUDAN_CENTER: [number, number] = [121.5132, 31.2995];
+
 const Index = () => {
   // ── Onboarding ──────────────────────────────────────────────────────────
   const [onboardingVisible, setOnboardingVisible] = useState(
@@ -19,11 +21,15 @@ const Index = () => {
   const handleOnboardingComplete = useCallback((name: string, mins: number) => {
     setUsername(name);
     setRemindMins(mins);
-    localStorage.setItem('bb-onboarding-done',  '1');
-    localStorage.setItem('bb-username',          name);
-    localStorage.setItem('bb-remind-mins',       String(mins));
+    localStorage.setItem('bb-onboarding-done', '1');
+    localStorage.setItem('bb-username',         name);
+    localStorage.setItem('bb-remind-mins',      String(mins));
     setOnboardingVisible(false);
   }, []);
+
+  // ── Shared geo state (synced from MapTab → used by DiscoveryTab) ────────
+  const [sharedCenter, setSharedCenter] = useState<[number, number]>(FUDAN_CENTER);
+  const [sharedRadius, setSharedRadius] = useState<number>(750); // 10 min × 75 m/min
 
   // ── Tab & restaurant state ──────────────────────────────────────────────
   const [activeTab,    setActiveTab]    = useState<Tab>('map');
@@ -37,6 +43,15 @@ const Index = () => {
 
   const handleRestaurantsLoaded = useCallback((pois: POIRestaurant[]) => {
     setRestaurants(pois);
+  }, []);
+
+  // Lift location + radius from MapTab so DiscoveryTab gets fresh context
+  const handleLocationChange = useCallback((loc: [number, number]) => {
+    setSharedCenter(loc);
+  }, []);
+
+  const handleRadiusChange = useCallback((radiusM: number) => {
+    setSharedRadius(radiusM);
   }, []);
 
   // Called from CommunityTab when user taps a shop name
@@ -66,12 +81,18 @@ const Index = () => {
             onRestaurantsLoaded={handleRestaurantsLoaded}
             highlightId={highlightId}
             onHighlightClear={() => setHighlightId(null)}
+            onLocationChange={handleLocationChange}
+            onRadiusChange={handleRadiusChange}
           />
         </div>
 
         {activeTab === 'discovery' && (
           <div className="absolute inset-0 z-10">
-            <DiscoveryTab restaurants={restaurants} onViewOnMap={handleViewOnMap} />
+            <DiscoveryTab
+              center={sharedCenter}
+              radiusM={sharedRadius}
+              onViewOnMap={handleViewOnMap}
+            />
           </div>
         )}
 

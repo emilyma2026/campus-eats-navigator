@@ -1,17 +1,27 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
-import { Tag, Zap, ThumbsUp, Utensils, Coffee, Star, Clock, MapPin, LocateFixed, Footprints, Bike, Car } from 'lucide-react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import {
+  Tag, Zap, ThumbsUp, Utensils, Coffee, Star, Clock,
+  MapPin, LocateFixed, Footprints, Bike, Car, Search, X,
+} from 'lucide-react';
 import ScheduleTimeline from './ScheduleTimeline';
 import AMapContainer, { POIRestaurant } from './AMapContainer';
 import StoreDrawer, { EnrichedRestaurant } from './StoreDrawer';
 import MeituanLogo from './MeituanLogo';
 import { getActiveClass } from '@/data/scheduleData';
 
-// ── Transport config ────────────────────────────────────────────────────────
+// ── Transport config ─────────────────────────────────────────────────────────
 type TransportMode = 'walk' | 'bike' | 'drive';
+
 const TRANSPORT: Record<TransportMode, { label: string; icon: React.ElementType; speed: number; unit: string }> = {
-  walk:  { label: '步行', icon: Footprints, speed: 80,  unit: '步行' },
-  bike:  { label: '骑行', icon: Bike,       speed: 240, unit: '骑行' },
-  drive: { label: '驾车', icon: Car,        speed: 450, unit: '驾车' },
+  walk:  { label: '步行', icon: Footprints, speed: 75,  unit: '步行' },
+  bike:  { label: '骑行', icon: Bike,       speed: 200, unit: '骑行' },
+  drive: { label: '驾车', icon: Car,        speed: 350, unit: '驾车' },
+};
+
+const MAX_TIME: Record<TransportMode, number> = {
+  walk:  40,
+  bike:  30,
+  drive: 20,
 };
 
 const FILTERS = [
@@ -31,26 +41,86 @@ interface Props {
   onRestaurantsLoaded: (restaurants: POIRestaurant[]) => void;
   highlightId: string | null;
   onHighlightClear: () => void;
+  onLocationChange?: (loc: [number, number]) => void;
+  onRadiusChange?: (radiusM: number) => void;
 }
 
-export default function MapTab({ onRestaurantsLoaded, highlightId, onHighlightClear }: Props) {
+export default function MapTab({
+  onRestaurantsLoaded,
+  highlightId,
+  onHighlightClear,
+  onLocationChange,
+  onRadiusChange,
+}: Props) {
   const [walkTime,       setWalkTime]       = useState(10);
   const [transportMode,  setTransportMode]  = useState<TransportMode>('walk');
   const [selectedId,     setSelectedId]     = useState<string | null>(null);
   const [activeFilters,  setActiveFilters]  = useState<string[]>([]);
   const [restaurants,    setRestaurants]    = useState<POIRestaurant[]>([]);
   const [isRelocated,    setIsRelocated]    = useState(false);
+  const [currentAddress, setCurrentAddress] = useState('');
+  const [searchText,     setSearchText]     = useState('');
+
+  // externalCenter: set by AutoComplete selection → pushed into AMapContainer
+  const [autoCompleteCenter, setAutoCompleteCenter] = useState<[number, number] | undefined>(undefined);
+
+  const searchInputRef  = useRef<HTMLInputElement>(null);
+  const autoCompleteRef = useRef<any>(null);
 
   const speedMPerMin  = TRANSPORT[transportMode].speed;
   const activeClass   = getActiveClass();
-  const initialCenter = activeClass?.campusCoords ?? [121.513, 31.301] as [number, number];
+  const initialCenter = activeClass?.campusCoords ?? [121.5132, 31.2995] as [number, number];
 
+  // ── AutoComplete init (after mount, once AMap is available) ──────────────
+  useEffect(() => {
+    const init = () => {
+      if (!window.AMap || autoCompleteRef.current) return;
+      try {
+        autoCompleteRef.current = new window.AMap.AutoComplete({
+          input: 'bb-map-search',
+          city:  '上海',
+        });
+        autoCompleteRef.current.on('select', (e: any) => {
+          if (e.poi?.location) {
+            const loc: [number, number] = [e.poi.location.lng, e.poi.location.lat];
+            setAutoCompleteCenter(loc);
+            setSearchText(e.poi.name || '');
+            setIsRelocated(true);
+          }
+        });
+      } catch (_) { /* AMap not ready yet */ }
+    };
+
+    // Slight delay to let AMap finish loading
+    const t = setTimeout(init, 600);
+    return () => clearTimeout(t);
+  }, []);
+
+  // ── Distance-preserving mode switch ──────────────────────────────────────
+  const handleModeChange = useCallback((newMode: TransportMode) => {
+    const distanceM = walkTime * TRANSPORT[transportMode].speed;
+    const newTime   = Math.min(
+      Math.max(1, Math.round(distanceM / TRANSPORT[newMode].speed)),
+      MAX_TIME[newMode],
+    );
+    setTransportMode(newMode);
+    setWalkTime(newTime);
+  }, [walkTime, transportMode]);
+
+  // ── Callbacks ────────────────────────────────────────────────────────────
   const handlePOIResults = useCallback((pois: POIRestaurant[]) => {
     setRestaurants(pois);
     onRestaurantsLoaded(pois);
   }, [onRestaurantsLoaded]);
 
-  const handleLocationChange = useCallback(() => { setIsRelocated(true); }, []);
+  const handleLocationChange = useCallback((loc: [number, number]) => {
+    setIsRelocated(true);
+    onLocationChange?.(loc);
+  }, [onLocationChange]);
+
+  const handleRadiusChange = useCallback((radiusM: number) => {
+    onRadiusChange?.(radiusM);
+  }, [onRadiusChange]);
 
   useEffect(() => {
     if (highlightId) { setSelectedId(highlightId); onHighlightClear(); }
@@ -79,6 +149,9 @@ export default function MapTab({ onRestaurantsLoaded, highlightId, onHighlightCl
 
   const selectedRestaurant = enriched.find((r) => r.id === selectedId) ?? null;
 
+  // km label below slider
+  const distKm = Math.round(walkTime * speedMPerMin / 100) / 10;
+
   return (
     <div className="flex h-full w-full overflow-hidden bg-background">
 
@@ -88,22 +161,54 @@ export default function MapTab({ onRestaurantsLoaded, highlightId, onHighlightCl
           walkTime={walkTime}
           speedMPerMin={speedMPerMin}
           initialCenter={initialCenter}
+          externalCenter={autoCompleteCenter}
           onPOIResults={handlePOIResults}
+          onAddressChange={setCurrentAddress}
+          onRadiusChange={handleRadiusChange}
           selectedId={selectedId}
           onPinClick={(id) => setSelectedId((prev) => prev === id ? null : id)}
           onLocationChange={handleLocationChange}
         />
 
-        {/* Hint / relocated badge */}
-        {!isRelocated ? (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-black/50 text-white text-[11px] font-medium px-3 py-1.5 rounded-full backdrop-blur-sm pointer-events-none">
-            <MapPin size={11} className="text-[#FFD000]" /> 点击地图更换位置锚点
+        {/* ── Search bar overlay ─────────────────────────────────────────── */}
+        <div className="absolute top-3 left-3 right-3 z-20">
+          <div className="relative">
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+            />
+            <input
+              ref={searchInputRef}
+              id="bb-map-search"
+              type="text"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder="搜索地点、学校、街道..."
+              className="w-full pl-9 pr-9 py-2.5 bg-white/96 backdrop-blur-sm rounded-xl shadow-lg text-sm border border-transparent focus:outline-none focus:border-[#FFD000] focus:ring-2 focus:ring-[#FFD000]/30 placeholder-gray-400"
+            />
+            {searchText && (
+              <button
+                onClick={() => { setSearchText(''); setAutoCompleteCenter(undefined); }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
-        ) : (
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-[#FFD000] text-black text-[11px] font-bold px-3 py-1.5 rounded-full shadow-md pointer-events-none">
-            <LocateFixed size={11} /> 已切换位置 · 数据已更新
-          </div>
-        )}
+        </div>
+
+        {/* Relocated / hint badge */}
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 pointer-events-none">
+          {isRelocated ? (
+            <div className="flex items-center gap-1.5 bg-[#FFD000] text-black text-[11px] font-bold px-3 py-1.5 rounded-full shadow-md whitespace-nowrap">
+              <LocateFixed size={11} /> 已切换位置 · 数据已更新
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 bg-black/50 text-white text-[11px] font-medium px-3 py-1.5 rounded-full backdrop-blur-sm whitespace-nowrap">
+              <MapPin size={11} className="text-[#FFD000]" /> 点击地图或搜索更换位置锚点
+            </div>
+          )}
+        </div>
       </section>
 
       {/* ── RIGHT: Calendar-driven Feed ────────────────────────────────────── */}
@@ -124,17 +229,27 @@ export default function MapTab({ onRestaurantsLoaded, highlightId, onHighlightCl
             <ScheduleTimeline isRelocated={isRelocated} />
           </div>
 
+          {/* Geocoded address display */}
+          {currentAddress && (
+            <div className="px-4 pt-2">
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1 truncate">
+                <MapPin size={9} className="shrink-0 text-[#B8860B]" />
+                <span className="truncate">{currentAddress}</span>
+              </p>
+            </div>
+          )}
+
           {/* ── Transport + Walk Time ─────────────────────────────────────── */}
           <div className="px-4 pt-4">
             {/* Transport mode — individual pill buttons */}
             <div className="flex gap-2 mb-3">
               {(Object.entries(TRANSPORT) as [TransportMode, typeof TRANSPORT[TransportMode]][]).map(([mode, cfg]) => {
-                const Icon = cfg.icon;
+                const Icon   = cfg.icon;
                 const active = transportMode === mode;
                 return (
                   <button
                     key={mode}
-                    onClick={() => setTransportMode(mode)}
+                    onClick={() => handleModeChange(mode)}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-full text-xs font-bold border-2 transition-all ${
                       active
                         ? 'bg-[#FFD000] border-[#FFD000] text-black shadow-sm'
@@ -153,16 +268,14 @@ export default function MapTab({ onRestaurantsLoaded, highlightId, onHighlightCl
               <span className="text-sm font-bold text-orange-500 tabular-nums">{walkTime} 分钟</span>
             </div>
             <input
-              type="range" min="1" max="20" value={walkTime}
+              type="range" min="1" max={MAX_TIME[transportMode]} value={walkTime}
               onChange={(e) => { setWalkTime(parseInt(e.target.value)); setSelectedId(null); }}
               className="w-full cursor-pointer"
             />
             <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
               <span>1 分钟</span>
-              <span className="text-center text-[10px] text-muted-foreground">
-                ≈ {Math.round(walkTime * speedMPerMin / 1000 * 10) / 10} km
-              </span>
-              <span>20 分钟</span>
+              <span className="font-semibold text-[#B8860B]">≈ {distKm} km</span>
+              <span>{MAX_TIME[transportMode]} 分钟</span>
             </div>
           </div>
 
@@ -208,7 +321,7 @@ export default function MapTab({ onRestaurantsLoaded, highlightId, onHighlightCl
                           <span className="text-xs font-bold">{r.rating.toFixed(1)}</span>
                         </div>
                         <span className="flex items-center gap-1 text-xs text-orange-500 font-bold">
-                          <Clock size={10} /> {r.walkMins}m
+                          <Clock size={10} /> {r.walkMins}分钟
                         </span>
                         {r.studentDeal && (
                           <span className="text-[10px] font-bold bg-[#FFD000] text-black px-1.5 py-0.5 rounded">学生价</span>
