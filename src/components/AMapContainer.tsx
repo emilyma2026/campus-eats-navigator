@@ -202,9 +202,9 @@ export default function AMapContainer({
   []);
 
   // ── API FETCH: multi-center strategy for geographic spread ──────────────
-  // 5 parallel searches (original + 4 offsets ~1.5 km away) give 40+ restaurants
-  // distributed across the full 3.2 km walk radius instead of clustering at
-  // the nearest commercial street.
+  // 17 parallel searches across 4 rings (outer/mid/near/diagonal) give 60+
+  // restaurants spread N/S/E/W in the full 3.2 km walk radius, with extra
+  // density in the 5-10 min (~500 m) zone to avoid clustering.
   const fetchFromAPI = useCallback((map: any, center: [number, number]) => {
     if (!window.AMap || !searchRef.current) return;
     const fetchRadius = maxFetchRadius(speedRef.current);
@@ -222,20 +222,37 @@ export default function AMapContainer({
       return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
     };
 
-    // 8 offset searches + 1 main: outer ring (~2 km) for 20-40 min coverage,
-    // mid ring (~1 km) to fill the 10-20 min gap.
-    const oFar = { lat: 0.018, lng: 0.022 }; // ~2.0 km at Shanghai latitude
-    const oMid = { lat: 0.009, lng: 0.011 }; // ~1.0 km
+    // 16 offset searches + 1 main across four rings:
+    //  outer  (~2.0 km) N/E/S/W  → 20-40 min coverage
+    //  mid    (~1.0 km) N/E/S/W  → 10-20 min coverage
+    //  near   (~0.5 km) N/E/S/W  → 5-10 min coverage (new)
+    //  diag   (~1.0 km) NE/NW/SE/SW → fill angular gaps (new)
+    const oFar  = { lat: 0.018,  lng: 0.022  }; // ~2.0 km
+    const oMid  = { lat: 0.009,  lng: 0.011  }; // ~1.0 km
+    const oNear = { lat: 0.0045, lng: 0.0055 }; // ~0.5 km
+    const oDiag = { lat: 0.0064, lng: 0.0078 }; // ~1.0 km diagonal (0.707 × oMid)
     const configs: Array<{ c: [number, number]; r: number; ps: number }> = [
-      { c: center,                                                    r: fetchRadius, ps: 50 }, // main
-      { c: [center[0],            center[1] + oFar.lat],             r: 1400,        ps: 25 }, // N outer
-      { c: [center[0] + oFar.lng, center[1]            ],            r: 1400,        ps: 25 }, // E outer
-      { c: [center[0],            center[1] - oFar.lat],             r: 1400,        ps: 25 }, // S outer
-      { c: [center[0] - oFar.lng, center[1]            ],            r: 1400,        ps: 25 }, // W outer
-      { c: [center[0],            center[1] + oMid.lat],             r: 1000,        ps: 15 }, // N mid
-      { c: [center[0] + oMid.lng, center[1]            ],            r: 1000,        ps: 15 }, // E mid
-      { c: [center[0],            center[1] - oMid.lat],             r: 1000,        ps: 15 }, // S mid
-      { c: [center[0] - oMid.lng, center[1]            ],            r: 1000,        ps: 15 }, // W mid
+      { c: center,                                                         r: fetchRadius, ps: 50 }, // main
+      // outer ring N/E/S/W
+      { c: [center[0],             center[1] + oFar.lat ],               r: 1400,        ps: 20 }, // N outer
+      { c: [center[0] + oFar.lng,  center[1]            ],               r: 1400,        ps: 20 }, // E outer
+      { c: [center[0],             center[1] - oFar.lat ],               r: 1400,        ps: 20 }, // S outer
+      { c: [center[0] - oFar.lng,  center[1]            ],               r: 1400,        ps: 20 }, // W outer
+      // mid ring N/E/S/W
+      { c: [center[0],             center[1] + oMid.lat ],               r: 1000,        ps: 15 }, // N mid
+      { c: [center[0] + oMid.lng,  center[1]            ],               r: 1000,        ps: 15 }, // E mid
+      { c: [center[0],             center[1] - oMid.lat ],               r: 1000,        ps: 15 }, // S mid
+      { c: [center[0] - oMid.lng,  center[1]            ],               r: 1000,        ps: 15 }, // W mid
+      // near ring N/E/S/W (~5-10 min zone)
+      { c: [center[0],             center[1] + oNear.lat],               r: 700,         ps: 15 }, // N near
+      { c: [center[0] + oNear.lng, center[1]            ],               r: 700,         ps: 15 }, // E near
+      { c: [center[0],             center[1] - oNear.lat],               r: 700,         ps: 15 }, // S near
+      { c: [center[0] - oNear.lng, center[1]            ],               r: 700,         ps: 15 }, // W near
+      // diagonal mid ring NE/NW/SE/SW (fills angular gaps)
+      { c: [center[0] + oDiag.lng, center[1] + oDiag.lat],              r: 900,         ps: 12 }, // NE
+      { c: [center[0] - oDiag.lng, center[1] + oDiag.lat],              r: 900,         ps: 12 }, // NW
+      { c: [center[0] + oDiag.lng, center[1] - oDiag.lat],              r: 900,         ps: 12 }, // SE
+      { c: [center[0] - oDiag.lng, center[1] - oDiag.lat],              r: 900,         ps: 12 }, // SW
     ];
 
     let accumulated: POIRestaurant[] = [];
