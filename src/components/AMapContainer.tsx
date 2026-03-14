@@ -1,8 +1,5 @@
 import React, { useEffect, useRef } from 'react';
 
-// TODO: INSERT AMAP_KEY HERE
-const AMAP_KEY = '';
-
 interface AMapContainerProps {
   restaurants: Array<{
     id: number;
@@ -21,27 +18,17 @@ export default function AMapContainer({ restaurants, selectedId, onPinClick }: A
   const markersRef = useRef<any[]>([]);
 
   useEffect(() => {
-    if (!AMAP_KEY) return; // Skip if no key
-
-    // Load AMap script
-    const script = document.createElement('script');
-    script.src = `https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}`;
-    script.async = true;
-    script.onload = () => {
-      if (!mapRef.current || !window.AMap) return;
-      const map = new window.AMap.Map(mapRef.current, {
-        zoom: 15,
-        center: [121.51, 31.30], // Wujiaochang, Shanghai
-        mapStyle: 'amap://styles/light',
-      });
-      mapInstanceRef.current = map;
-      updateMarkers(map);
-    };
-    document.head.appendChild(script);
+    if (!mapRef.current || !window.AMap) return;
+    const map = new window.AMap.Map(mapRef.current, {
+      zoom: 15,
+      center: [121.513, 31.301],
+      mapStyle: 'amap://styles/light',
+    });
+    mapInstanceRef.current = map;
+    updateMarkers(map);
 
     return () => {
       mapInstanceRef.current?.destroy();
-      script.remove();
     };
   }, []);
 
@@ -52,7 +39,6 @@ export default function AMapContainer({ restaurants, selectedId, onPinClick }: A
   }, [restaurants, selectedId]);
 
   const updateMarkers = (map: any) => {
-    // Clear old markers
     markersRef.current.forEach(m => map.remove(m));
     markersRef.current = [];
 
@@ -77,17 +63,11 @@ export default function AMapContainer({ restaurants, selectedId, onPinClick }: A
       markersRef.current.push(marker);
     });
 
-    // Center on selected
     const sel = restaurants.find(r => r.id === selectedId);
     if (sel) {
       map.setCenter([sel.lng, sel.lat]);
     }
   };
-
-  // If no API key, show placeholder
-  if (!AMAP_KEY) {
-    return null; // Parent will render placeholder
-  }
 
   return <div ref={mapRef} className="absolute inset-0" />;
 }
