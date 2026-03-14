@@ -198,7 +198,7 @@ export default function CampusFoodMap() {
               <div className="w-8 h-8 bg-primary rounded-xl flex items-center justify-center shadow-card">
                 <Utensils size={16} className="text-primary-foreground" />
               </div>
-              <h1 className="text-lg font-extrabold tracking-tight">UniEat</h1>
+              <h1 className="text-lg font-extrabold tracking-tight">Bell Bite</h1>
             </div>
           </div>
 
