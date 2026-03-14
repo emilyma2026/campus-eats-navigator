@@ -9,30 +9,33 @@ export interface ClassBlock {
   campusCoords: [number, number];
 }
 
+// All classes anchored at Fudan Handan / Guanyuan Campus
+const FUDAN: [number, number] = [121.5132, 31.2995];
+
 export const CLASSES: ClassBlock[] = [
   {
     name: '计量经济学',
     startHour: 9,  startMin: 0,
-    endHour: 11,   endMin: 0,
+    endHour:   11, endMin:   0,
     color: 'hsl(48 100% 50%)',
-    campus: '复旦·北区',
-    campusCoords: [121.502, 31.303],
+    campus: '复旦·邯郸',
+    campusCoords: FUDAN,
   },
   {
     name: '市场营销',
     startHour: 11, startMin: 0,
-    endHour: 12,   endMin: 30,
+    endHour:   12, endMin:   30,
     color: 'hsl(27 100% 50%)',
     campus: '复旦·管院',
-    campusCoords: [121.513, 31.301],
+    campusCoords: FUDAN,
   },
   {
     name: '公司金融',
     startHour: 14, startMin: 0,
-    endHour: 15,   endMin: 50,
+    endHour:   15, endMin:   50,
     color: 'hsl(48 80% 45%)',
-    campus: '上财·武东路',
-    campusCoords: [121.503, 31.294],
+    campus: '复旦·邯郸',
+    campusCoords: FUDAN,
   },
 ];
 

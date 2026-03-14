@@ -1,25 +1,116 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Bell, ChevronRight, Check, BookOpen, MapPin } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { motion } from 'framer-motion';
+import { Bell, BookOpen, MapPin, Check, ChevronDown } from 'lucide-react';
 import { CLASSES } from '@/data/scheduleData';
 
 interface Props {
   onComplete: (username: string, remindMins: number) => void;
 }
 
-const SLIDE = {
-  initial: { opacity: 0, x: 40 },
-  animate: { opacity: 1, x: 0 },
-  exit:    { opacity: 0, x: -40 },
-  transition: { duration: 0.28 },
-};
+// ── Toggle Switch ────────────────────────────────────────────────────────────
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      onClick={() => onChange(!checked)}
+      className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${checked ? 'bg-[#FFD000]' : 'bg-border'}`}
+    >
+      <span
+        className="absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform"
+        style={{ transform: checked ? 'translateX(22px)' : 'translateX(2px)' }}
+      />
+    </button>
+  );
+}
 
+// ── Wheel Picker ─────────────────────────────────────────────────────────────
+const PICK_ITEMS = [
+  { label: '10分钟',  value: 10  },
+  { label: '15分钟',  value: 15  },
+  { label: '20分钟',  value: 20  },
+  { label: '25分钟',  value: 25  },
+  { label: '30分钟',  value: 30  },
+  { label: '35分钟',  value: 35  },
+  { label: '40分钟',  value: 40  },
+  { label: '45分钟',  value: 45  },
+  { label: '50分钟',  value: 50  },
+  { label: '55分钟',  value: 55  },
+  { label: '1小时',   value: 60  },
+  { label: '1.5小时', value: 90  },
+  { label: '2小时',   value: 120 },
+];
+const ITEM_H = 44;
+
+function WheelPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [picked, setPicked] = useState(value);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const idx = PICK_ITEMS.findIndex((it) => it.value >= value);
+    el.scrollTop = Math.max(0, idx) * ITEM_H;
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleScroll = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const idx = Math.round(el.scrollTop / ITEM_H);
+    const clamped = Math.max(0, Math.min(idx, PICK_ITEMS.length - 1));
+    const newVal = PICK_ITEMS[clamped].value;
+    setPicked(newVal);
+    onChange(newVal);
+  }, [onChange]);
+
+  return (
+    <div className="relative rounded-2xl bg-secondary overflow-hidden" style={{ height: ITEM_H * 3 }}>
+      {/* Gradient overlays */}
+      <div className="absolute inset-x-0 top-0 pointer-events-none z-10"
+        style={{ height: ITEM_H * 1.2, background: 'linear-gradient(to bottom, hsl(var(--secondary)) 20%, transparent)' }} />
+      <div className="absolute inset-x-0 bottom-0 pointer-events-none z-10"
+        style={{ height: ITEM_H * 1.2, background: 'linear-gradient(to top, hsl(var(--secondary)) 20%, transparent)' }} />
+      {/* Center selection highlight */}
+      <div className="absolute inset-x-4 pointer-events-none z-10 rounded-xl bg-[#FFD000]/15 border border-[#FFD000]/40"
+        style={{ top: ITEM_H, height: ITEM_H }} />
+      {/* Scrollable list */}
+      <div
+        ref={ref}
+        onScroll={handleScroll}
+        className="h-full overflow-y-scroll"
+        style={{ scrollSnapType: 'y mandatory', scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}
+      >
+        <div style={{ height: ITEM_H }} />
+        {PICK_ITEMS.map(({ label, value: v }) => (
+          <div
+            key={v}
+            style={{ height: ITEM_H, scrollSnapAlign: 'center' }}
+            className={`flex items-center justify-center transition-all font-bold ${
+              v === picked ? 'text-foreground text-lg' : 'text-muted-foreground/40 text-sm'
+            }`}
+          >
+            {label}
+          </div>
+        ))}
+        <div style={{ height: ITEM_H }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Main Overlay ─────────────────────────────────────────────────────────────
 export default function OnboardingOverlay({ onComplete }: Props) {
-  const [step, setStep]           = useState(1);
-  const [username, setUsername]   = useState('');
-  const [uploading, setUploading] = useState(false);
-  const [uploadDone, setUploadDone] = useState(false);
-  const [remindMins, setRemindMins] = useState<5 | 10 | 15>(10);
+  const [username,        setUsername]        = useState('');
+  const [remindMins,      setRemindMins]      = useState(30);
+  const [useCustom,       setUseCustom]       = useState(false);
+  const [uploadSchedule,  setUploadSchedule]  = useState(false);
+  const [enableNotifs,    setEnableNotifs]    = useState(true);
+  const [uploading,       setUploading]       = useState(false);
+  const [uploadDone,      setUploadDone]      = useState(false);
+
+  const PRESETS = [
+    { label: '30分', value: 30 },
+    { label: '45分', value: 45 },
+    { label: '1小时', value: 60 },
+  ];
 
   const handleUpload = () => {
     if (uploading || uploadDone) return;
@@ -27,164 +118,176 @@ export default function OnboardingOverlay({ onComplete }: Props) {
     setTimeout(() => { setUploading(false); setUploadDone(true); }, 1600);
   };
 
+  const handleEnter = () => onComplete(username.trim() || '同学', remindMins);
+
   return (
-    <div className="fixed inset-0 z-50 bg-white flex flex-col">
-      {/* Progress bar */}
-      <div className="h-1 bg-muted">
+    <div className="fixed inset-0 z-50 bg-background flex flex-col overflow-y-auto">
+
+      {/* ── Brand Header ────────────────────────────────────────────────── */}
+      <div className="flex flex-col items-center pt-10 pb-5 px-6 shrink-0">
         <motion.div
-          className="h-full bg-[#FFD000]"
-          animate={{ width: `${(step / 3) * 100}%` }}
-          transition={{ duration: 0.35 }}
-        />
+          initial={{ scale: 0.6, opacity: 0 }}
+          animate={{ scale: 1,   opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 260, damping: 18 }}
+          className="w-20 h-20 bg-[#FFD000] rounded-[24px] flex items-center justify-center shadow-xl text-4xl mb-4"
+        >
+          🔔
+        </motion.div>
+        <h1 className="text-2xl font-black tracking-tight">Bell &amp; Bite</h1>
+        <p className="text-sm text-muted-foreground mt-1">日程驱动 · 美食决策 · 一步到位</p>
       </div>
 
-      <div className="flex-1 flex items-center justify-center p-6">
-        <AnimatePresence mode="wait">
+      {/* ── Form body ───────────────────────────────────────────────────── */}
+      <div className="flex-1 px-6 pb-10 max-w-sm mx-auto w-full space-y-5">
 
-          {/* ── Step 1 : Welcome ─────────────────────────── */}
-          {step === 1 && (
-            <motion.div key="s1" {...SLIDE} className="w-full max-w-sm flex flex-col items-center gap-6 text-center">
-              <motion.div
-                initial={{ scale: 0.6, opacity: 0 }}
-                animate={{ scale: 1,   opacity: 1 }}
-                transition={{ type: 'spring', stiffness: 280, damping: 18, delay: 0.1 }}
-                className="w-24 h-24 bg-[#FFD000] rounded-[28px] flex items-center justify-center shadow-xl text-5xl"
-              >
-                🔔
-              </motion.div>
+        {/* Nickname */}
+        <div className="space-y-1.5">
+          <label className="text-sm font-bold">你的昵称</label>
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleEnter()}
+            placeholder="输入昵称（如：小明同学）"
+            className="w-full border-2 border-border rounded-2xl px-4 py-3 text-sm font-medium bg-card focus:outline-none focus:border-[#FFD000] transition-colors"
+          />
+        </div>
 
-              <div>
-                <h1 className="text-3xl font-black">Bell &amp; Bite</h1>
-                <p className="text-muted-foreground mt-1 text-sm">欢迎来到五角星梦幻大学城</p>
-                <p className="text-xs text-muted-foreground/70 mt-1">日程驱动 · 美食决策 · 一步到位</p>
-              </div>
-
-              <input
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && username.trim() && setStep(2)}
-                placeholder="输入你的昵称（如：小明同学）"
-                className="w-full border-2 border-border rounded-2xl px-4 py-3 text-sm font-medium focus:outline-none focus:border-[#FFD000] transition-colors"
-              />
-
+        {/* Reminder presets + custom picker */}
+        <div className="space-y-2">
+          <label className="text-sm font-bold">下课提醒时间</label>
+          <div className="flex gap-2">
+            {PRESETS.map(({ label, value }) => (
               <button
-                onClick={() => username.trim() && setStep(2)}
-                disabled={!username.trim()}
-                className="w-full bg-[#FFD000] text-black font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-35 hover:bg-yellow-400 active:scale-[0.98] transition-all"
+                key={value}
+                onClick={() => { setRemindMins(value); setUseCustom(false); }}
+                className={`flex-1 py-3 rounded-2xl font-bold text-sm border-2 transition-all ${
+                  !useCustom && remindMins === value
+                    ? 'bg-[#FFD000] border-[#FFD000] text-black shadow-sm'
+                    : 'border-border text-muted-foreground hover:border-yellow-300'
+                }`}
               >
-                开始使用 <ChevronRight size={18} />
+                {label}
               </button>
+            ))}
+            <button
+              onClick={() => setUseCustom((v) => !v)}
+              className={`flex-1 py-3 rounded-2xl font-bold text-sm border-2 transition-all flex items-center justify-center gap-0.5 ${
+                useCustom
+                  ? 'bg-[#FFD000] border-[#FFD000] text-black shadow-sm'
+                  : 'border-border text-muted-foreground hover:border-yellow-300'
+              }`}
+            >
+              自定义<ChevronDown size={12} className={`transition-transform ${useCustom ? 'rotate-180' : ''}`} />
+            </button>
+          </div>
 
-              <p className="text-xs text-muted-foreground">步骤 1 / 3</p>
+          {/* Scroll wheel picker (shown when custom selected) */}
+          {useCustom && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.22 }}
+            >
+              <WheelPicker value={remindMins} onChange={setRemindMins} />
             </motion.div>
           )}
+        </div>
 
-          {/* ── Step 2 : Schedule Upload ──────────────────── */}
-          {step === 2 && (
-            <motion.div key="s2" {...SLIDE} className="w-full max-w-sm flex flex-col gap-5">
-              <div className="text-center">
-                <div className="w-14 h-14 bg-[#FFD000]/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                  <BookOpen size={26} className="text-[#B8860B]" />
+        {/* Optional settings card */}
+        <div className="space-y-2">
+          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">可选设置</p>
+          <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
+
+            {/* Upload Schedule toggle */}
+            <div className="flex items-center justify-between px-4 py-3.5">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 bg-[#FFD000]/15 rounded-xl flex items-center justify-center shrink-0">
+                  <BookOpen size={14} className="text-[#B8860B]" />
                 </div>
-                <h2 className="text-2xl font-black">导入课表</h2>
-                <p className="text-sm text-muted-foreground mt-1">上传截图，AI 自动识别校区信息</p>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">导入课表</p>
+                  <p className="text-[11px] text-muted-foreground truncate">AI 识别校区，自动定位</p>
+                </div>
               </div>
+              <Toggle checked={uploadSchedule} onChange={setUploadSchedule} />
+            </div>
 
-              {!uploadDone ? (
-                <button
-                  onClick={handleUpload}
-                  disabled={uploading}
-                  className="border-2 border-dashed border-[#FFD000]/60 rounded-2xl p-8 flex flex-col items-center gap-3 hover:bg-[#FFD000]/5 transition-colors w-full"
-                >
-                  {uploading ? (
-                    <div className="w-10 h-10 border-4 border-[#FFD000] border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Upload size={30} className="text-[#B8860B]" />
-                  )}
-                  <p className="text-sm font-semibold text-muted-foreground">
-                    {uploading ? 'AI 识别中…' : '点击上传课表截图'}
-                  </p>
-                  {!uploading && (
-                    <p className="text-xs text-muted-foreground/60">支持截图 / PDF / 照片</p>
-                  )}
-                </button>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-bold text-green-600 mb-2">
-                    <Check size={16} /> 识别成功 · {CLASSES.length} 门课程
-                  </div>
-                  {CLASSES.map((cls) => (
-                    <div key={cls.name} className="flex items-center justify-between bg-secondary rounded-xl px-3 py-2.5">
-                      <div>
-                        <p className="text-sm font-bold">{cls.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {`${cls.startHour}:${String(cls.startMin).padStart(2, '0')} – ${cls.endHour}:${String(cls.endMin).padStart(2, '0')}`}
-                        </p>
-                      </div>
-                      <span className="flex items-center gap-1 text-xs font-bold bg-[#FFD000]/20 text-[#6B4C00] px-2 py-1 rounded-full shrink-0 ml-2">
-                        <MapPin size={10} /> {cls.campus}
-                      </span>
+            {/* Enable Notifications toggle */}
+            <div className="flex items-center justify-between px-4 py-3.5">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 bg-[#FFD000]/15 rounded-xl flex items-center justify-center shrink-0">
+                  <Bell size={14} className="text-[#B8860B]" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold">开启通知</p>
+                  <p className="text-[11px] text-muted-foreground truncate">下课前 {remindMins >= 60 ? `${remindMins / 60}小时` : `${remindMins}分钟`} 推送美食</p>
+                </div>
+              </div>
+              <Toggle checked={enableNotifs} onChange={setEnableNotifs} />
+            </div>
+          </div>
+        </div>
+
+        {/* Schedule upload area (shown when toggle ON) */}
+        {uploadSchedule && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-2"
+          >
+            {!uploadDone ? (
+              <button
+                onClick={handleUpload}
+                disabled={uploading}
+                className="w-full border-2 border-dashed border-[#FFD000]/60 rounded-2xl p-5 flex flex-col items-center gap-2 hover:bg-[#FFD000]/5 transition-colors disabled:opacity-60"
+              >
+                {uploading ? (
+                  <div className="w-8 h-8 border-[3px] border-[#FFD000] border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <BookOpen size={22} className="text-[#B8860B]" />
+                )}
+                <p className="text-sm font-semibold text-muted-foreground">
+                  {uploading ? 'AI 识别中…' : '点击上传课表截图'}
+                </p>
+                {!uploading && (
+                  <p className="text-xs text-muted-foreground/60">支持截图 / PDF / 照片</p>
+                )}
+              </button>
+            ) : (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-green-600 mb-1">
+                  <Check size={13} /> 识别成功 · {CLASSES.length} 门课程
+                </div>
+                {CLASSES.map((cls) => (
+                  <div key={cls.name} className="flex items-center justify-between bg-secondary rounded-xl px-3 py-2.5">
+                    <div>
+                      <p className="text-xs font-bold">{cls.name}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {`${cls.startHour}:${String(cls.startMin).padStart(2, '0')} – ${cls.endHour}:${String(cls.endMin).padStart(2, '0')}`}
+                      </p>
                     </div>
-                  ))}
-                </div>
-              )}
-
-              <button
-                onClick={() => uploadDone && setStep(3)}
-                disabled={!uploadDone}
-                className="w-full bg-[#FFD000] text-black font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 disabled:opacity-35 hover:bg-yellow-400 active:scale-[0.98] transition-all"
-              >
-                继续 <ChevronRight size={18} />
-              </button>
-              <p className="text-xs text-muted-foreground text-center">步骤 2 / 3</p>
-            </motion.div>
-          )}
-
-          {/* ── Step 3 : Notification Prefs ───────────────── */}
-          {step === 3 && (
-            <motion.div key="s3" {...SLIDE} className="w-full max-w-sm flex flex-col gap-5">
-              <div className="text-center">
-                <div className="w-14 h-14 bg-[#FFD000]/20 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                  <Bell size={26} className="text-[#B8860B]" />
-                </div>
-                <h2 className="text-2xl font-black">下课提醒</h2>
-                <p className="text-sm text-muted-foreground mt-1">在下课前推送周边美食推荐</p>
-              </div>
-
-              <p className="text-sm font-semibold text-center text-muted-foreground">提前几分钟提醒？</p>
-
-              <div className="grid grid-cols-3 gap-3">
-                {([5, 10, 15] as const).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setRemindMins(m)}
-                    className={`py-5 rounded-2xl font-black text-xl border-2 transition-all flex flex-col items-center gap-1 ${
-                      remindMins === m
-                        ? 'bg-[#FFD000] border-[#FFD000] text-black shadow-md'
-                        : 'border-border text-muted-foreground hover:border-yellow-300'
-                    }`}
-                  >
-                    {m}
-                    <span className="text-xs font-medium">分钟</span>
-                  </button>
+                    <span className="flex items-center gap-0.5 text-[10px] font-bold bg-[#FFD000]/20 text-[#6B4C00] px-2 py-1 rounded-full shrink-0 ml-2">
+                      <MapPin size={8} /> {cls.campus}
+                    </span>
+                  </div>
                 ))}
               </div>
+            )}
+          </motion.div>
+        )}
 
-              <div className="bg-secondary rounded-2xl p-3 text-xs text-muted-foreground text-center">
-                将在每节课结束前 <span className="font-bold text-[#B8860B]">{remindMins} 分钟</span> 推送周边 Top 5 餐厅
-              </div>
+        {/* CTA */}
+        <button
+          onClick={handleEnter}
+          className="w-full bg-[#FFD000] text-black font-bold py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-yellow-400 active:scale-[0.98] transition-all text-base shadow-lg"
+        >
+          进入 Bell &amp; Bite 🎉
+        </button>
 
-              <button
-                onClick={() => onComplete(username.trim(), remindMins)}
-                className="w-full bg-[#FFD000] text-black font-bold py-3.5 rounded-2xl flex items-center justify-center gap-2 hover:bg-yellow-400 active:scale-[0.98] transition-all text-base"
-              >
-                进入 Bell &amp; Bite 🎉
-              </button>
-              <p className="text-xs text-muted-foreground text-center">步骤 3 / 3</p>
-            </motion.div>
-          )}
-
-        </AnimatePresence>
+        <p className="text-xs text-center text-muted-foreground pb-2">
+          所有设置均可在 App 内随时修改
+        </p>
       </div>
     </div>
   );

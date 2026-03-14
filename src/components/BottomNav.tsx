@@ -8,10 +8,11 @@ interface BottomNavProps {
   onChange: (tab: Tab) => void;
 }
 
+// Order: 地图决策 → 发现热榜 → 校园社区
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: 'discovery', label: '发现', icon: Compass },
-  { id: 'map', label: '地图决策', icon: MapPin },
-  { id: 'community', label: '社区', icon: Users },
+  { id: 'map',       label: '地图决策', icon: MapPin  },
+  { id: 'discovery', label: '发现热榜', icon: Compass },
+  { id: 'community', label: '校园社区', icon: Users   },
 ];
 
 export default function BottomNav({ activeTab, onChange }: BottomNavProps) {

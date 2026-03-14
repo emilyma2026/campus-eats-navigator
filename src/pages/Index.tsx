@@ -14,11 +14,11 @@ const Index = () => {
     () => !localStorage.getItem('bb-onboarding-done'),
   );
   const [username,   setUsername]   = useState(() => localStorage.getItem('bb-username')   || '');
-  const [remindMins, setRemindMins] = useState(() => parseInt(localStorage.getItem('bb-remind-mins') || '10') as 5 | 10 | 15);
+  const [remindMins, setRemindMins] = useState<number>(() => parseInt(localStorage.getItem('bb-remind-mins') || '30'));
 
   const handleOnboardingComplete = useCallback((name: string, mins: number) => {
     setUsername(name);
-    setRemindMins(mins as 5 | 10 | 15);
+    setRemindMins(mins);
     localStorage.setItem('bb-onboarding-done',  '1');
     localStorage.setItem('bb-username',          name);
     localStorage.setItem('bb-remind-mins',       String(mins));
@@ -26,7 +26,7 @@ const Index = () => {
   }, []);
 
   // ── Tab & restaurant state ──────────────────────────────────────────────
-  const [activeTab,    setActiveTab]    = useState<Tab>('discovery');
+  const [activeTab,    setActiveTab]    = useState<Tab>('map');
   const [restaurants,  setRestaurants]  = useState<POIRestaurant[]>([]);
   const [highlightId,  setHighlightId]  = useState<string | null>(null);
 

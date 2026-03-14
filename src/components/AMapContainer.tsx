@@ -13,7 +13,7 @@ export interface POIRestaurant {
 
 interface AMapContainerProps {
   walkTime: number;
-  speedMPerMin?: number;        // 80 walk | 240 bike | 450 drive
+  speedMPerMin?: number;          // 80 walk | 240 bike | 450 drive
   initialCenter?: [number, number];
   onPOIResults: (restaurants: POIRestaurant[]) => void;
   selectedId: string | null;
@@ -21,7 +21,14 @@ interface AMapContainerProps {
   onLocationChange?: (loc: [number, number]) => void;
 }
 
-const FALLBACK_CENTER: [number, number] = [121.513, 31.301]; // Fudan SoM
+const FALLBACK_CENTER: [number, number] = [121.5132, 31.2995]; // Fudan Handan
+
+/** Pre-load a larger radius so slider filtering is instant (no extra API calls). */
+function maxFetchRadius(speed: number): number {
+  if (speed <= 80)  return 2000; // walk  ~25 min
+  if (speed <= 240) return 4800; // bike  ~20 min
+  return 9000;                   // drive ~20 min
+}
 
 export default function AMapContainer({
   walkTime,
@@ -38,44 +45,49 @@ export default function AMapContainer({
   const searchRef       = useRef<any>(null);
   const userPinRef      = useRef<any>(null);
 
-  // Captured once at mount so the init useEffect is stable
+  // Captured once at mount so map init effect is stable
   const mountCenter = useRef<[number, number]>(initialCenter ?? FALLBACK_CENTER);
 
-  // Dynamic-value refs (break stale closures in callbacks)
-  const searchCenterRef       = useRef<[number, number]>(mountCenter.current);
-  const selectedIdRef         = useRef<string | null>(selectedId);
-  const lastPoisRef           = useRef<POIRestaurant[]>([]);
-  const onPinClickRef         = useRef(onPinClick);
-  const onLocationChangeRef   = useRef(onLocationChange);
-  const walkTimeRef           = useRef(walkTime);
-  const speedRef              = useRef(speedMPerMin);
+  // ── Dynamic refs (break stale closures in callbacks) ────────────────────
+  const searchCenterRef     = useRef<[number, number]>(mountCenter.current);
+  const selectedIdRef       = useRef<string | null>(selectedId);
+  const allPoisRef          = useRef<POIRestaurant[]>([]);  // ALL results from last API fetch
+  const lastFilteredRef     = useRef<POIRestaurant[]>([]);  // currently displayed (after filter)
+  const onPinClickRef       = useRef(onPinClick);
+  const onLocationChangeRef = useRef(onLocationChange);
+  const onPOIResultsRef     = useRef(onPOIResults);
+  const walkTimeRef         = useRef(walkTime);
+  const speedRef            = useRef(speedMPerMin);
 
-  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
-  useEffect(() => { onPinClickRef.current = onPinClick; }, [onPinClick]);
+  // Keep refs in sync – ORDER MATTERS (must run before the reactive effects below)
+  useEffect(() => { selectedIdRef.current      = selectedId;       }, [selectedId]);
+  useEffect(() => { onPinClickRef.current       = onPinClick;       }, [onPinClick]);
   useEffect(() => { onLocationChangeRef.current = onLocationChange; }, [onLocationChange]);
-  useEffect(() => { walkTimeRef.current = walkTime; }, [walkTime]);
-  useEffect(() => { speedRef.current = speedMPerMin; }, [speedMPerMin]);
+  useEffect(() => { onPOIResultsRef.current     = onPOIResults;     }, [onPOIResults]);
+  useEffect(() => { walkTimeRef.current         = walkTime;         }, [walkTime]);
+  useEffect(() => { speedRef.current            = speedMPerMin;     }, [speedMPerMin]);
 
-  // ── Restaurant markers ──────────────────────────────────────────────────
+  // ── Marker rendering ─────────────────────────────────────────────────────
   const updateMarkers = useCallback((map: any, pois: POIRestaurant[]) => {
-    lastPoisRef.current = pois;
+    lastFilteredRef.current = pois;
     markersRef.current.forEach((m) => map.remove(m));
     markersRef.current = [];
 
     pois.forEach((r) => {
-      const isSelected = selectedIdRef.current === r.id;
-      const travelMins = Math.max(1, Math.round(r.distance / speedRef.current));
+      const isSel = selectedIdRef.current === r.id;
+      const mins  = Math.max(1, Math.round(r.distance / speedRef.current));
       const marker = new window.AMap.Marker({
         position: [r.lng, r.lat],
         content: `<div style="
-          background:${isSelected ? '#FF7A00' : '#FFD000'};
+          background:${isSel ? '#FF7A00' : '#FFD000'};
           color:#000; padding:2px 8px; border-radius:12px; font-size:12px; font-weight:700;
           box-shadow:0 2px 8px rgba(0,0,0,0.18); white-space:nowrap; cursor:pointer;
-          transform:${isSelected ? 'scale(1.25)' : 'scale(1)'};
-          border:${isSelected ? '2px solid white' : '1.5px solid rgba(0,0,0,0.1)'};
-        ">${travelMins}m</div>`,
+          transform:${isSel ? 'scale(1.25)' : 'scale(1)'};
+          border:${isSel ? '2px solid white' : '1.5px solid rgba(0,0,0,0.1)'};
+          animation:bb-marker-in 0.18s ease;
+        ">${mins}m</div>`,
         offset: new window.AMap.Pixel(-20, -10),
-        zIndex: isSelected ? 150 : 100,
+        zIndex: isSel ? 150 : 100,
       });
       (marker as any)._poiId = r.id;
       marker.on('click', () => onPinClickRef.current(r.id));
@@ -84,10 +96,21 @@ export default function AMapContainer({
     });
   }, []);
 
-  // ── POI search ──────────────────────────────────────────────────────────
-  const searchNearby = useCallback((map: any, center: [number, number], radius: number) => {
+  // ── LOCAL filter: instant, reads cached allPoisRef (no API call) ─────────
+  const applyFilter = useCallback(() => {
+    if (!mapInstanceRef.current || allPoisRef.current.length === 0) return;
+    const radius   = Math.max(walkTimeRef.current * speedRef.current, 100);
+    const filtered = allPoisRef.current.filter((p) => p.distance <= radius);
+    onPOIResultsRef.current(filtered);
+    updateMarkers(mapInstanceRef.current, filtered);
+  }, [updateMarkers]);
+
+  // ── API FETCH: called on center change or transport mode change ───────────
+  const fetchFromAPI = useCallback((map: any, center: [number, number]) => {
     if (!window.AMap || !searchRef.current) return;
-    searchRef.current.searchNearBy('餐饮', center, radius, (status: string, result: any) => {
+    const fetchRadius = maxFetchRadius(speedRef.current);
+
+    searchRef.current.searchNearBy('餐饮', center, fetchRadius, (status: string, result: any) => {
       if (status === 'complete' && result.poiList) {
         const pois: POIRestaurant[] = result.poiList.pois
           .map((poi: any) => ({
@@ -99,15 +122,31 @@ export default function AMapContainer({
             address:  poi.address || '',
             type:     poi.type || '',
             distance: poi.distance ? parseInt(poi.distance) : 0,
-          }))
-          .filter((p: POIRestaurant) => p.distance <= radius);
-        onPOIResults(pois);
-        updateMarkers(map, pois);
+          }));
+
+        allPoisRef.current = pois; // cache the full unfiltered list
+
+        // Apply current walk-time radius immediately after fetch
+        const radius   = Math.max(walkTimeRef.current * speedRef.current, 100);
+        const filtered = pois.filter((p) => p.distance <= radius);
+        onPOIResultsRef.current(filtered);
+        updateMarkers(map, filtered);
       }
     });
-  }, [onPOIResults, updateMarkers]);
+  }, [updateMarkers]);
 
-  // ── User anchor pin + ripple ────────────────────────────────────────────
+  // ── Reactive: walkTime slider → instant LOCAL filter, NO new API call ─────
+  useEffect(() => {
+    applyFilter();
+  }, [walkTime, applyFilter]);
+
+  // ── Reactive: transport mode change → re-fetch (different radius budget) ──
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+    fetchFromAPI(mapInstanceRef.current, searchCenterRef.current);
+  }, [speedMPerMin, fetchFromAPI]);
+
+  // ── User anchor pin with ripple ──────────────────────────────────────────
   const placeUserPin = useCallback((map: any, loc: [number, number]) => {
     if (userPinRef.current) { map.remove(userPinRef.current); userPinRef.current = null; }
 
@@ -133,15 +172,15 @@ export default function AMapContainer({
       searchCenterRef.current = nl;
       placeUserPin(map, nl);
       map.panTo(nl);
-      searchNearby(map, nl, Math.max(walkTimeRef.current * speedRef.current, 100));
+      fetchFromAPI(map, nl);
       onLocationChangeRef.current?.(nl);
     });
 
     map.add(pin);
     userPinRef.current = pin;
-  }, [searchNearby]);
+  }, [fetchFromAPI]);
 
-  // ── Map init (runs once) ────────────────────────────────────────────────
+  // ── Map initialisation (runs once on mount) ───────────────────────────────
   useEffect(() => {
     if (!mapRef.current || !window.AMap) return;
     const center = mountCenter.current;
@@ -151,7 +190,7 @@ export default function AMapContainer({
     });
     mapInstanceRef.current = map;
 
-    // Campus anchor (blue pulse — stays at initial campus location)
+    // Campus anchor – blue pulsing dot at initial campus location
     map.add(new window.AMap.Marker({
       position: center,
       content: `<div style="position:relative;width:24px;height:24px;">
@@ -166,32 +205,27 @@ export default function AMapContainer({
       type: '餐饮服务', pageSize: 25, pageIndex: 1, extensions: 'all',
     });
 
-    searchNearby(map, center, walkTime * speedMPerMin);
+    fetchFromAPI(map, center);
 
-    // Click → relocate anchor
+    // Map click → relocate search anchor
     map.on('click', (e: any) => {
       const nl: [number, number] = [e.lnglat.lng, e.lnglat.lat];
       searchCenterRef.current = nl;
       placeUserPin(map, nl);
       map.panTo(nl);
-      searchNearby(map, nl, Math.max(walkTimeRef.current * speedRef.current, 100));
+      fetchFromAPI(map, nl);
       onLocationChangeRef.current?.(nl);
     });
 
     return () => { mapInstanceRef.current?.destroy(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Re-search when walk-time or speed changes
+  // ── Re-render markers + pan to selected pin ───────────────────────────────
   useEffect(() => {
     if (!mapInstanceRef.current) return;
-    const radius = Math.max(walkTime * speedMPerMin, 100);
-    searchNearby(mapInstanceRef.current, searchCenterRef.current, radius);
-  }, [walkTime, speedMPerMin, searchNearby]);
-
-  // Re-render markers + pan on selection change
-  useEffect(() => {
-    if (!mapInstanceRef.current) return;
-    if (lastPoisRef.current.length > 0) updateMarkers(mapInstanceRef.current, lastPoisRef.current);
+    if (lastFilteredRef.current.length > 0) {
+      updateMarkers(mapInstanceRef.current, lastFilteredRef.current);
+    }
     if (selectedId) {
       const m = markersRef.current.find((mk) => mk._poiId === selectedId);
       if (m) mapInstanceRef.current.panTo(m.getPosition());
@@ -201,8 +235,9 @@ export default function AMapContainer({
   return (
     <>
       <style>{`
-        @keyframes bb-pulse  { 0%{transform:scale(1);opacity:.6} 100%{transform:scale(2.5);opacity:0} }
-        @keyframes bb-ripple { 0%{transform:translate(-50%,-50%) scale(1);opacity:.75} 100%{transform:translate(-50%,-50%) scale(4.5);opacity:0} }
+        @keyframes bb-pulse     { 0%{transform:scale(1);opacity:.6} 100%{transform:scale(2.5);opacity:0} }
+        @keyframes bb-ripple    { 0%{transform:translate(-50%,-50%) scale(1);opacity:.75} 100%{transform:translate(-50%,-50%) scale(4.5);opacity:0} }
+        @keyframes bb-marker-in { from{opacity:0;transform:scale(0.45)} to{opacity:1;transform:scale(1)} }
         .bb-ring { position:absolute;top:50%;left:50%;width:36px;height:36px;border-radius:50%;border:2px solid #FFD000;animation:bb-ripple 2.2s ease-out infinite;pointer-events:none; }
         .bb-r2 { animation-delay:.55s }
         .bb-r3 { animation-delay:1.1s  }
