@@ -106,8 +106,17 @@ const Index = () => {
       shopName.toLowerCase().includes(r.name.toLowerCase()),
     );
     if (match) {
-      setExternalRestaurant(null);
-      setHighlightId(match.id);
+      // Set externalRestaurant so the map pans to the actual location
+      const hash = match.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+      setExternalRestaurant({
+        ...match,
+        walkMins:      Math.max(1, Math.round(match.distance / 80)),
+        studentDeal:   hash % 3 === 0,
+        meituanVoucher: hash % 4 === 0,
+        crowdLevel:    (['low', 'medium', 'high'] as const)[hash % 3],
+        waitMins:      0,
+      });
+      setHighlightId(null);
     } else {
       // No real POI found – create a placeholder to show partial info in drawer
       const hash = shopName.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -164,7 +173,7 @@ const Index = () => {
             <DiscoveryTab
               center={sharedCenter}
               radiusM={sharedRadius}
-              locationName={sharedLocationName}
+              locationName="复旦大学管理学院"
               onViewOnMap={handleViewOnMap}
             />
           </div>

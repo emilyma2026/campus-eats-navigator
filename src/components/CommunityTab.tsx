@@ -15,32 +15,30 @@ interface MomentPost {
   tags: string[];
 }
 
-const MOMENTS: MomentPost[] = [
+// Moment templates — shopName will be overridden with a real loaded restaurant name
+// so that "在地图上看" navigation is always guaranteed to find a match.
+const MOMENT_TEMPLATES = [
   {
     id: 'p1', user: '金融系大三 Linda', avatar: 'L', time: '10分钟前',
-    content: '这家日式定食份量超足！学生证打 8 折，强烈安利给大家 😍',
-    shopName: '味千拉面',
+    content: '这家份量超足！学生证打 8 折，强烈安利给大家 😍',
     groupBuy: { slots: 3, filled: 2 },
-    likes: 42, comments: 8, tags: ['学生优惠', '日料', '性价比'],
+    likes: 42, comments: 8, tags: ['学生优惠', '性价比'],
   },
   {
     id: 'p2', user: '管理系研一 Kevin', avatar: 'K', time: '1小时前',
-    content: '下午 2 点下课去了家麻辣烫，居然没排队！错峰吃真的爽 😂',
-    shopName: '张亮麻辣烫',
-    likes: 31, comments: 5, tags: ['快餐', '错峰打卡', '麻辣烫'],
+    content: '下午 2 点下课去，居然没排队！错峰吃真的爽 😂',
+    likes: 31, comments: 5, tags: ['错峰打卡', '实惠'],
   },
   {
     id: 'p3', user: '经济系 小美', avatar: '美', time: '昨天',
-    content: '期末周必去！24 小时咖啡馆，插座多、Wi-Fi 快、不催走，适合通宵学习',
-    shopName: 'luckin coffee 瑞幸咖啡',
+    content: '期末周神店！插座多、Wi-Fi 快，适合通宵刷题 📚',
     groupBuy: { slots: 4, filled: 1 },
-    likes: 89, comments: 23, tags: ['咖啡', '学习打卡', '24h'],
+    likes: 89, comments: 23, tags: ['学习打卡', '续命'],
   },
   {
     id: 'p4', user: '信工 Alex', avatar: 'A', time: '2天前',
-    content: '强推校门口的煎饼果子摊，老板阿姨超 nice，还会多给一个蛋！',
-    shopName: '校门口煎饼摊',
-    likes: 57, comments: 12, tags: ['早餐', '隐藏小吃', '新发现'],
+    content: '老板超 nice，份量给的足，性价比拉满！强推给周边同学',
+    likes: 57, comments: 12, tags: ['隐藏美食', '新发现'],
   },
 ];
 
@@ -50,6 +48,14 @@ interface Props {
 }
 
 export default function CommunityTab({ restaurants, onViewShop }: Props) {
+  // Use real restaurant names in posts so navigation always finds a map match.
+  // Fall back to generic names only when no restaurants are loaded yet.
+  const FALLBACK_NAMES = ['周边餐厅A', '周边餐厅B', '周边餐厅C', '周边餐厅D'];
+  const moments = MOMENT_TEMPLATES.map((tpl, i) => ({
+    ...tpl,
+    shopName: restaurants[i + 2]?.name ?? restaurants[i]?.name ?? FALLBACK_NAMES[i],
+  }));
+
   // Derive 2 pinned group-buy posts from real nearby restaurants (or fall back to mock names)
   const pinnedGroupBuys = (() => {
     const sources = restaurants.length >= 2
@@ -137,7 +143,7 @@ export default function CommunityTab({ restaurants, onViewShop }: Props) {
         </div>
 
         {/* ── Moments Feed ────────────────────────────────────────────────── */}
-        {MOMENTS.map((post) => (
+        {moments.map((post) => (
           <div key={post.id} className="bg-card rounded-2xl p-4 border border-border shadow-card">
 
             {/* User row */}

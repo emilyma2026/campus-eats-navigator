@@ -38,10 +38,8 @@ const PICK_ITEMS = [
   { label: '50分钟', value: 50  },
   { label: '55分钟', value: 55  },
   { label: '1小时',  value: 60  },
-  { label: '1.5小时',value: 90  },
-  { label: '2小时',  value: 120 },
 ];
-const ITEM_H = 44;
+const ITEM_H = 36;
 
 function WheelPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -106,6 +104,7 @@ export default function SettingsModal({ username: initUsername, remindMins: init
   const [username,       setUsername]       = useState(initUsername);
   const [remindMins,     setRemindMins]     = useState(initMins);
   const [useCustom,      setUseCustom]      = useState(false);
+  const [confirmedCustom, setConfirmedCustom] = useState(false);
   const [enableNotifs,   setEnableNotifs]   = useState(true);
   const [uploadSchedule, setUploadSchedule] = useState(false);
   const [uploading,      setUploading]      = useState(false);
@@ -131,10 +130,10 @@ export default function SettingsModal({ username: initUsername, remindMins: init
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-sm bg-background rounded-t-3xl overflow-y-auto max-h-[88vh] shadow-2xl">
+        <div className="w-full max-w-sm bg-background rounded-3xl flex flex-col max-h-[90vh] shadow-2xl">
 
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border shrink-0">
@@ -148,7 +147,7 @@ export default function SettingsModal({ username: initUsername, remindMins: init
         </div>
 
         {/* Form */}
-        <div className="px-6 py-5 space-y-5 pb-10">
+        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5 pb-4">
 
           {/* Nickname */}
           <div className="space-y-1.5">
@@ -186,7 +185,7 @@ export default function SettingsModal({ username: initUsername, remindMins: init
                 {PRESETS.map(({ label, sublabel, value }) => (
                   <button
                     key={value}
-                    onClick={() => { setRemindMins(value); setUseCustom(false); }}
+                    onClick={() => { setRemindMins(value); setUseCustom(false); setConfirmedCustom(false); }}
                     className={`flex-1 py-3 rounded-2xl border-2 transition-all flex flex-col items-center gap-0.5 ${
                       !useCustom && remindMins === value
                         ? 'bg-[#FFD000] border-[#FFD000] text-black shadow-sm'
@@ -198,17 +197,30 @@ export default function SettingsModal({ username: initUsername, remindMins: init
                   </button>
                 ))}
                 <button
-                  onClick={() => setUseCustom((v) => !v)}
+                  onClick={() => { setUseCustom((v) => !v); }}
                   className={`flex-1 py-3 rounded-2xl font-bold text-sm border-2 transition-all flex items-center justify-center gap-0.5 ${
-                    useCustom
+                    useCustom || confirmedCustom
                       ? 'bg-[#FFD000] border-[#FFD000] text-black shadow-sm'
                       : 'border-border text-muted-foreground hover:border-yellow-300'
                   }`}
                 >
-                  自定义<ChevronDown size={12} className={`transition-transform ${useCustom ? 'rotate-180' : ''}`} />
+                  {confirmedCustom && !useCustom
+                    ? (PICK_ITEMS.find((p) => p.value === remindMins)?.label ?? `${remindMins}分`)
+                    : <>{'自定义'}<ChevronDown size={12} className={`transition-transform ${useCustom ? 'rotate-180' : ''}`} /></>
+                  }
                 </button>
               </div>
-              {useCustom && <WheelPicker value={remindMins} onChange={setRemindMins} />}
+              {useCustom && (
+                <>
+                  <WheelPicker value={remindMins} onChange={setRemindMins} />
+                  <button
+                    onClick={() => { setUseCustom(false); setConfirmedCustom(true); }}
+                    className="w-full py-2.5 bg-[#FFD000] text-black font-bold rounded-2xl text-sm mt-2 hover:bg-yellow-400 active:scale-[0.98] transition-all"
+                  >
+                    确认 · {PICK_ITEMS.find((p) => p.value === remindMins)?.label ?? `${remindMins}分`}
+                  </button>
+                </>
+              )}
             </div>
           )}
 
@@ -275,7 +287,9 @@ export default function SettingsModal({ username: initUsername, remindMins: init
             </div>
           )}
 
-          {/* Save */}
+        </div>
+        {/* Sticky Save button */}
+        <div className="px-6 pb-6 pt-3 border-t border-border shrink-0 bg-background">
           <button
             onClick={handleSave}
             className="w-full bg-[#FFD000] text-black font-black py-4 rounded-2xl flex items-center justify-center gap-2 hover:bg-yellow-400 active:scale-[0.98] transition-all text-base shadow-lg"

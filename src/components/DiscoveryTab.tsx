@@ -17,8 +17,12 @@ const SCENES = [
 /** Deduplicate and sanitise type tags from AMap's pipe/semicolon-separated string. */
 function parseTypeTags(type: string): string[] {
   if (!type) return [];
-  const blocked = new Set(['餐饮服务', '餐饮', '食品', '美食', '其他', '肯德基']);
-  // Rename awkward category names to friendlier equivalents
+  // Block generic/meaningless category tokens
+  const blocked = new Set([
+    '餐饮服务', '餐饮', '食品', '美食', '其他', '肯德基',
+    '餐饮相关', '餐饮相关场所', '中餐', '餐厅', '饮食', '外卖',
+    '服务', '购物', '生活服务',
+  ]);
   const RENAMES: Record<string, string> = { '外国餐厅': '西餐/异国料理' };
   return [
     ...new Set(
@@ -26,7 +30,7 @@ function parseTypeTags(type: string): string[] {
         .split(';')
         .flatMap((t) => t.split('|'))
         .map((t) => { const s = t.trim(); return RENAMES[s] ?? s; })
-        .filter((t) => t && !blocked.has(t)),
+        .filter((t) => t && t.length > 1 && !blocked.has(t) && !t.includes('餐饮') && !t.includes('相关')),
     ),
   ].slice(0, 2);
 }
@@ -34,6 +38,41 @@ function parseTypeTags(type: string): string[] {
 const getDealFlags = (id: string) => {
   const hash = id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
   return { studentDeal: hash % 3 === 0, meituanVoucher: hash % 4 === 0 };
+};
+
+// ── Cuisine + price helpers (mirrors MapTab logic) ──────────────────────────
+const DISCOVERY_PRICE_BY_CUISINE: Record<string, [number, number]> = {
+  '中餐':     [22, 50],
+  '日料/韩料': [45, 95],
+  '快餐':     [10, 22],
+  '轻食健康':  [25, 42],
+  '西餐':     [40, 78],
+  '烘焙甜品':  [15, 32],
+  '茶饮咖啡':  [16, 36],
+  '面食':     [12, 25],
+};
+
+function detectDiscoveryCuisine(type: string, name = ''): string {
+  const t = (type + ' ' + name).toLowerCase();
+  if (/日[式料]|寿司|拉面|天妇罗|鳗鱼|抹茶|韩[式料国]|烤肉|泡菜/.test(t)) return '日料/韩料';
+  if (/咖啡|奶茶|饮品|饮料|茶[饮馆]|珍珠|果汁|柠檬茶|瑞幸|星巴克|coco|喜茶|奈雪|沪上阿姨|茶百道|古茗|益禾|一点点|贡茶/.test(t)) return '茶饮咖啡';
+  if (/烘焙|甜品|蛋糕|面包|甜点|冰淇淋|冰激凌|甜食|糕点|饼干/.test(t)) return '烘焙甜品';
+  if (/轻食|沙拉|健康|素食|蔬菜|水果/.test(t)) return '轻食健康';
+  if (/西餐|汉堡|披萨|意[大式]|法[式餐]|牛排|三明治|薯条|炸鸡|肯德基|麦当劳|必胜客/.test(t)) return '西餐';
+  if (/面[条馆食]|馄饨|饺[子馆]|粉[店馆]|河粉|米线|混沌|汤面|面食/.test(t)) return '面食';
+  if (/快餐|小吃|便当|盒饭|自助[餐厅]|包子|煎饼|卤味/.test(t)) return '快餐';
+  return '中餐';
+}
+
+const DISCOVERY_CROWD_LABEL: Record<string, string> = {
+  low:    '🟢 客少',
+  medium: '🟡 正常',
+  high:   '🔴 人多',
+};
+const DISCOVERY_CROWD_CLASS: Record<string, string> = {
+  low:    'bg-green-100 text-green-700',
+  medium: 'bg-yellow-100 text-yellow-700',
+  high:   'bg-red-100 text-red-700',
 };
 
 interface POIResult {
@@ -146,11 +185,21 @@ export default function DiscoveryTab({ center, radiusM, onViewOnMap, locationNam
   }, [activeScene, fetchScene]);
 
   const enriched = useMemo(() =>
-    results.map((r) => ({
-      ...r,
-      tags: parseTypeTags(r.type),
-      ...getDealFlags(r.id),
-    })),
+    results.map((r) => {
+      const hash     = r.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+      const cuisine  = detectDiscoveryCuisine(r.type, r.name);
+      const [pMin, pMax] = DISCOVERY_PRICE_BY_CUISINE[cuisine] ?? [20, 50];
+      const avgPrice = pMin + (hash % (pMax - pMin + 1));
+      const cr       = hash % 10;
+      const crowdLevel = cr <= 4 ? 'high' : cr <= 7 ? 'medium' : 'low';
+      return {
+        ...r,
+        tags: parseTypeTags(r.type),
+        ...getDealFlags(r.id),
+        avgPrice,
+        crowdLevel,
+      };
+    }),
     [results],
   );
 
@@ -161,7 +210,7 @@ export default function DiscoveryTab({ center, radiusM, onViewOnMap, locationNam
       <div className="px-4 pt-5 pb-3 bg-card border-b border-border">
         <h1 className="text-xl font-extrabold tracking-tight mb-0.5">发现美食</h1>
         <p className="text-xs text-muted-foreground mb-3 truncate">
-          📍 <span className="font-semibold">{locationName || '复旦管院'}</span> 周边 5 km · 按口碑排名
+          📍 <span className="font-semibold">{locationName || '复旦大学管理学院'}</span> 周边 5 km · 按口碑排名
         </p>
 
         {/* Scene chips */}
@@ -248,13 +297,17 @@ export default function DiscoveryTab({ center, radiusM, onViewOnMap, locationNam
                   </div>
                 </div>
 
-                <p className="text-xs text-muted-foreground truncate mb-2">{r.address}</p>
-
-                {/* Meta row */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                {/* Address + distance on same line */}
+                <div className="flex items-center gap-2 mb-2">
+                  <p className="text-xs text-muted-foreground truncate flex-1">{r.address}</p>
+                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground shrink-0">
                     <Navigation size={10} /> {distLabel(r.distance)}
                   </span>
+                </div>
+
+                {/* Meta row: price + deals + tags */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] text-muted-foreground font-semibold">¥{r.avgPrice}/人</span>
                   {r.studentDeal && (
                     <span className="flex items-center gap-1 px-2 py-0.5 bg-[#FFD000]/15 text-[10px] font-bold rounded-full">
                       <Tag size={9} /> 学生优惠

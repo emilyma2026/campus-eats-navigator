@@ -34,7 +34,7 @@ const FALLBACK_CENTER: [number, number] = [121.5132, 31.2995]; // Fudan Handan
 function maxFetchRadius(speed: number): number {
   if (speed <= 100)  return 3200;  // walk  ≤40 min @ 80 m/min  → 3.2 km
   if (speed <= 300)  return 7500;  // bike  ≤30 min @ 250 m/min → 7.5 km
-  return 10000;                    // drive ≤20 min @ 500 m/min → 10 km
+  return 5000;                     // drive capped at campus city (≈ 5 km)
 }
 
 /** Remove restaurants within 50 m of each other (same-mall dedup). */
@@ -317,7 +317,11 @@ export default function AMapContainer({
   // ── Reactive: panToCoords — pan only, no refetch (external POI spotlight) ──
   const lastPanRef = useRef<string>('');
   useEffect(() => {
-    if (!panToCoords || !mapInstanceRef.current) return;
+    if (!panToCoords) {
+      lastPanRef.current = ''; // reset so same coords can re-pan next time
+      return;
+    }
+    if (!mapInstanceRef.current) return;
     const key = panToCoords.join(',');
     if (key === lastPanRef.current) return;
     lastPanRef.current = key;

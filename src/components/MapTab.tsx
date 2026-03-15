@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
-  Tag, Zap, Star, Clock,
+  Tag, Zap, Star,
   MapPin, Footprints, Bike, Car, Search, X, Shield, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import ScheduleTimeline from './ScheduleTimeline';
@@ -70,6 +70,39 @@ const CROWD_CLASS: Record<CrowdLevel, string> = {
   high:   'bg-red-100 text-red-700',
 };
 
+const CUISINE_CATEGORIES = ['中餐', '日料/韩料', '快餐', '轻食健康', '西餐', '烘焙甜品', '茶饮咖啡', '面食'] as const;
+type CuisineCategory = typeof CUISINE_CATEGORIES[number];
+
+function detectCuisine(type: string, name = ''): CuisineCategory {
+  // Combine type + name so brand names (CoCo, 瑞幸, etc.) can be matched
+  const t = (type + ' ' + name).toLowerCase();
+  if (/日[式料]|寿司|拉面|天妇罗|鳗鱼|抹茶|韩[式料国]|烤肉|泡菜/.test(t)) return '日料/韩料';
+  if (/咖啡|奶茶|饮品|饮料|茶[饮馆]|珍珠|果汁|柠檬茶|瑞幸|星巴克|coco|喜茶|奈雪|沪上阿姨|茶百道|古茗|益禾|一点点|贡茶/.test(t)) return '茶饮咖啡';
+  if (/烘焙|甜品|蛋糕|面包|甜点|冰淇淋|冰激凌|甜食|糕点|饼干/.test(t)) return '烘焙甜品';
+  if (/轻食|沙拉|健康|素食|蔬菜|水果/.test(t)) return '轻食健康';
+  if (/西餐|汉堡|披萨|意[大式]|法[式餐]|牛排|三明治|薯条|炸鸡|肯德基|麦当劳|必胜客/.test(t)) return '西餐';
+  if (/面[条馆食]|馄饨|饺[子馆]|粉[店馆]|河粉|米线|混沌|汤面|面食/.test(t)) return '面食';
+  if (/快餐|小吃|便当|盒饭|自助[餐厅]|包子|煎饼|卤味/.test(t)) return '快餐';
+  return '中餐';
+}
+
+const PRICE_BY_CUISINE: Record<CuisineCategory, [number, number]> = {
+  '中餐':    [22, 50],
+  '日料/韩料': [45, 95],
+  '快餐':    [10, 22],
+  '轻食健康': [25, 42],
+  '西餐':    [40, 78],
+  '烘焙甜品': [15, 32],
+  '茶饮咖啡': [16, 36],
+  '面食':    [12, 25],
+};
+
+function detectPrice(category: CuisineCategory, hash: number): number {
+  const [min, max] = PRICE_BY_CUISINE[category];
+  return min + (hash % (max - min + 1));
+}
+
+
 interface Props {
   onRestaurantsLoaded: (restaurants: POIRestaurant[]) => void;
   highlightId: string | null;
@@ -79,6 +112,7 @@ interface Props {
   onAddressChange?: (addr: string) => void;
   externalRestaurant?: EnrichedRestaurant | null;
   onExternalRestaurantClose?: () => void;
+  remindMins?: number;
 }
 
 export default function MapTab({
@@ -90,11 +124,14 @@ export default function MapTab({
   onAddressChange: onAddressChangeProp,
   externalRestaurant,
   onExternalRestaurantClose,
+  remindMins: remindMinsProp,
 }: Props) {
   const [walkTime,           setWalkTime]           = useState(MAX_TIME['walk']); // default = max
   const [transportMode,      setTransportMode]      = useState<TransportMode>('walk');
   const [selectedId,         setSelectedId]         = useState<string | null>(null);
   const [activeFilters,      setActiveFilters]      = useState<string[]>([]);
+  const [cuisineFilter,      setCuisineFilter]      = useState<string>('全部');
+  const [diceResult,         setDiceResult]         = useState<string | null>(null);
   const [restaurants,        setRestaurants]        = useState<POIRestaurant[]>([]);
   const [isRelocated,        setIsRelocated]        = useState(false);
   const [currentAddress,     setCurrentAddress]     = useState('');
@@ -178,10 +215,15 @@ export default function MapTab({
     if (highlightId) { setSelectedId(highlightId); onHighlightClear(); }
   }, [highlightId, onHighlightClear]);
 
-  // Pan map when an external restaurant is spotlighted (no refetch)
+  // Pan map + highlight pin when an external restaurant is spotlighted (no refetch)
   useEffect(() => {
     if (externalRestaurant) {
-      setPanToCoords([externalRestaurant.lng, externalRestaurant.lat]);
+      setSelectedId(externalRestaurant.id); // turn the pin orange
+      setPanToCoords(null);
+      const t = setTimeout(() => setPanToCoords([externalRestaurant.lng, externalRestaurant.lat]), 30);
+      return () => clearTimeout(t);
+    } else {
+      setPanToCoords(null);
     }
   }, [externalRestaurant]);
 
@@ -190,24 +232,36 @@ export default function MapTab({
 
   // ── Enriched restaurants ─────────────────────────────────────────────────
   const enriched = useMemo<EnrichedRestaurant[]>(() =>
-    restaurants.map((r) => ({
-      ...r,
-      walkMins: Math.max(1, Math.round(r.distance / speedMPerMin)),
-      ...getDealFlags(r.id),
-      ...getCrowdInfo(r.id),
-    })),
+    restaurants.map((r) => {
+      const hash = r.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+      const cuisineCategory = detectCuisine(r.type, r.name);
+      return {
+        ...r,
+        walkMins: Math.max(1, Math.round(r.distance / speedMPerMin)),
+        ...getDealFlags(r.id),
+        ...getCrowdInfo(r.id),
+        avgPrice: detectPrice(cuisineCategory, hash),
+        cuisineCategory,
+      };
+    }),
     [restaurants, speedMPerMin],
   );
 
   const filtered = useMemo(() => {
-    if (!activeFilters.length) return enriched;
-    return enriched.filter((r) => {
-      if (activeFilters.includes('薅羊毛') && !r.studentDeal)         return false;
-      if (activeFilters.includes('不踩雷') && r.rating < 4.5)         return false;
-      if (activeFilters.includes('不用等') && r.crowdLevel === 'high') return false;
-      return true;
-    });
-  }, [enriched, activeFilters]);
+    let result = enriched;
+    if (activeFilters.length) {
+      result = result.filter((r) => {
+        if (activeFilters.includes('薅羊毛') && !r.studentDeal)         return false;
+        if (activeFilters.includes('不踩雷') && r.rating < 4.5)         return false;
+        if (activeFilters.includes('不用等') && r.crowdLevel === 'high') return false;
+        return true;
+      });
+    }
+    if (cuisineFilter !== '全部') {
+      result = result.filter((r) => r.cuisineCategory === cuisineFilter);
+    }
+    return result;
+  }, [enriched, activeFilters, cuisineFilter]);
 
   const selectedRestaurant = externalRestaurant ?? (enriched.find((r) => r.id === selectedId) ?? null);
   const distKm = Math.round(walkTime * speedMPerMin / 100) / 10;
@@ -223,7 +277,13 @@ export default function MapTab({
           initialCenter={initialCenter}
           externalCenter={autoCompleteCenter}
           panToCoords={panToCoords}
-          visiblePOIs={filtered as POIRestaurant[]}
+          visiblePOIs={(() => {
+            const base = filtered as POIRestaurant[];
+            if (externalRestaurant && !filtered.find(r => r.id === externalRestaurant.id)) {
+              return [...base, { id: externalRestaurant.id, name: externalRestaurant.name, lng: externalRestaurant.lng, lat: externalRestaurant.lat, rating: externalRestaurant.rating, address: externalRestaurant.address, type: externalRestaurant.type, distance: externalRestaurant.distance }];
+            }
+            return base;
+          })()}
           onPOIResults={handlePOIResults}
           onAddressChange={handleAddressChange}
           onRadiusChange={handleRadiusChange}
@@ -299,7 +359,7 @@ export default function MapTab({
                   </div>
                   <ScheduleTimeline
                     isRelocated={isRelocated}
-                    remindMins={parseInt(localStorage.getItem('bb-remind-mins') || '30')}
+                    remindMins={remindMinsProp ?? parseInt(localStorage.getItem('bb-remind-mins') || '30')}
                   />
                 </div>
               )}
@@ -388,8 +448,8 @@ export default function MapTab({
               下课吃什么 · <span className="text-foreground">{filtered.length}</span> 家
             </p>
 
-            {/* Filter Chips */}
-            <div className="flex flex-wrap gap-2 mb-3">
+            {/* Filter Chips + Dice Button */}
+            <div className="flex flex-wrap gap-2 mb-2">
               {FILTERS.map(({ label, icon: Icon }) => {
                 const active = activeFilters.includes(label);
                 return (
@@ -403,6 +463,44 @@ export default function MapTab({
                 );
               })}
             </div>
+
+            {/* Cuisine filter + dice row */}
+            <div className="flex items-center gap-2 mb-3">
+              <select
+                value={cuisineFilter}
+                onChange={(e) => setCuisineFilter(e.target.value)}
+                className="border border-border rounded-xl px-3 py-2 text-xs font-semibold bg-card text-foreground focus:outline-none focus:border-[#FFD000] transition-colors cursor-pointer"
+                style={{ minWidth: 0, flex: '1 1 0' }}
+              >
+                <option value="全部">🍴 菜系：全部</option>
+                {CUISINE_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* 帮我选 — random picker */}
+            {diceResult ? (
+              <div className="mb-3 flex items-center gap-2 px-3 py-2.5 bg-[#FFD000]/10 border border-[#FFD000]/40 rounded-2xl animate-pulse">
+                <span className="text-base">🎲</span>
+                <p className="text-xs font-bold text-foreground flex-1 truncate">为你选了：{diceResult}</p>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  if (filtered.length === 0) return;
+                  const pick = filtered[Math.floor(Math.random() * filtered.length)];
+                  setDiceResult(pick.name);
+                  setTimeout(() => {
+                    setSelectedId(pick.id);
+                    setDiceResult(null);
+                  }, 900);
+                }}
+                className="w-full mb-3 flex items-center justify-center gap-2 py-2.5 rounded-2xl border-2 border-dashed border-[#FFD000]/50 text-xs font-bold text-muted-foreground hover:bg-[#FFD000]/10 hover:border-[#FFD000] hover:text-foreground transition-all active:scale-[0.98]"
+              >
+                🎲 想不到吃什么？帮我选一家
+              </button>
+            )}
             <div className="space-y-2">
               {filtered.sort((a, b) => a.walkMins - b.walkMins).map((r, idx) => {
                 const isSel = selectedId === r.id;
@@ -423,29 +521,26 @@ export default function MapTab({
                         'bg-muted text-muted-foreground'
                       }`}>{idx + 1}</div>
 
-                      {/* Name + address */}
+                      {/* Row1: name+学生价+⭐+¥; Row2: address+crowd */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold truncate leading-tight">{r.name}</p>
-                        <p className="text-[10px] text-muted-foreground truncate">{r.address}</p>
-                      </div>
-
-                      {/* Right meta — single compact column */}
-                      <div className="flex flex-col items-end gap-0.5 ml-1 shrink-0">
-                        <div className="flex items-center gap-1">
-                          <Star size={10} fill="#FFD000" className="text-[#FFD000]" />
-                          <span className="text-[11px] font-bold">{r.rating.toFixed(1)}</span>
-                          <span className="text-[10px] text-orange-500 font-bold tabular-nums">
-                            <Clock size={9} className="inline -mt-0.5" /> {r.walkMins}min
-                          </span>
+                        <div className="flex items-center gap-1 min-w-0">
+                          <p className="text-sm font-bold truncate leading-tight flex-1 min-w-0">{r.name}</p>
+                          {r.studentDeal && (
+                            <span className="text-[10px] font-bold bg-[#FFD000] text-black px-1.5 py-0.5 rounded shrink-0">学生价</span>
+                          )}
+                          <div className="flex items-center gap-0.5 shrink-0">
+                            <Star size={10} fill="#FFD000" className="text-[#FFD000]" />
+                            <span className="text-[11px] font-bold">{r.rating.toFixed(1)}</span>
+                            {r.avgPrice && (
+                              <span className="text-[10px] text-muted-foreground font-semibold tabular-nums ml-0.5">¥{r.avgPrice}/人</span>
+                            )}
+                          </div>
                         </div>
-                        {/* Tags on one row */}
-                        <div className="flex items-center gap-1 flex-wrap justify-end">
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${CROWD_CLASS[r.crowdLevel]}`}>
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <p className="text-[10px] text-muted-foreground truncate flex-1">{r.address}</p>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${CROWD_CLASS[r.crowdLevel]}`}>
                             {CROWD_LABEL[r.crowdLevel]}
                           </span>
-                          {r.studentDeal && (
-                            <span className="text-[10px] font-bold bg-[#FFD000] text-black px-1.5 py-0.5 rounded">学生价</span>
-                          )}
                         </div>
                       </div>
                     </div>

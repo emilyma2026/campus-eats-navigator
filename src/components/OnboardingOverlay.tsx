@@ -45,8 +45,6 @@ const PICK_ITEMS = [
   { label: '50分钟',  value: 50  },
   { label: '55分钟',  value: 55  },
   { label: '1小时',   value: 60  },
-  { label: '1.5小时', value: 90  },
-  { label: '2小时',   value: 120 },
 ];
 const ITEM_H = 44;
 
@@ -210,12 +208,15 @@ export default function OnboardingOverlay({ onComplete }: Props) {
               <button
                 onClick={() => setUseCustom((v) => !v)}
                 className={`flex-1 py-3 rounded-2xl font-bold text-sm border-2 transition-all flex items-center justify-center gap-0.5 ${
-                  useCustom
+                  useCustom || (remindMins !== 15 && remindMins !== 30)
                     ? 'bg-[#FFD000] border-[#FFD000] text-black shadow-sm'
                     : 'border-border text-muted-foreground hover:border-yellow-300'
                 }`}
               >
-                自定义<ChevronDown size={12} className={`transition-transform ${useCustom ? 'rotate-180' : ''}`} />
+                {!useCustom && remindMins !== 15 && remindMins !== 30
+                  ? `${remindMins >= 60 ? '1小时' : remindMins + '分'}`
+                  : '自定义'}
+                <ChevronDown size={12} className={`transition-transform ${useCustom ? 'rotate-180' : ''}`} />
               </button>
             </div>
             {useCustom && (
@@ -239,6 +240,13 @@ export default function OnboardingOverlay({ onComplete }: Props) {
                     </div>
                   ) : null;
                 })()}
+                {/* Confirm custom time */}
+                <button
+                  onClick={() => setUseCustom(false)}
+                  className="w-full py-2.5 rounded-2xl bg-black/80 text-white text-xs font-bold hover:bg-black transition-colors flex items-center justify-center gap-1.5"
+                >
+                  <Check size={13} /> 确认选择 {remindMins >= 60 ? '1小时' : `${remindMins}分钟`}
+                </button>
               </motion.div>
             )}
           </motion.div>
