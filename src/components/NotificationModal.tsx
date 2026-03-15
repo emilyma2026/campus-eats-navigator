@@ -4,13 +4,14 @@ import { motion } from 'framer-motion';
 
 interface Props {
   restaurantCount: number;
+  remindMins?: number;
   /** Called when user taps the primary "Go" button */
   onGo: () => void;
   /** Called when user dismisses without acting */
   onDismiss: () => void;
 }
 
-export default function NotificationModal({ restaurantCount, onGo, onDismiss }: Props) {
+export default function NotificationModal({ restaurantCount, remindMins = 30, onGo, onDismiss }: Props) {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 backdrop-blur-sm px-6">
       <motion.div
@@ -36,6 +37,9 @@ export default function NotificationModal({ restaurantCount, onGo, onDismiss }: 
           <h2 className="text-[22px] font-black text-black leading-tight text-center">
             即将下课！
           </h2>
+          <p className="text-[11px] font-semibold text-black/60 mt-1 text-center">
+            已按你设定的 <span className="font-black text-black">{remindMins} 分钟</span> 提前提醒
+          </p>
         </div>
 
         {/* Body */}
@@ -54,13 +58,13 @@ export default function NotificationModal({ restaurantCount, onGo, onDismiss }: 
           <div className="flex gap-3">
             <button
               onClick={onDismiss}
-              className="flex-1 py-3 rounded-2xl border-2 border-border text-sm font-bold text-muted-foreground hover:bg-secondary transition-colors"
+              className="px-4 py-3 rounded-2xl border-2 border-border text-sm font-bold text-muted-foreground hover:bg-secondary transition-colors shrink-0"
             >
               稍后
             </button>
             <button
               onClick={onGo}
-              className="flex-2 px-6 py-3 rounded-2xl bg-[#FFD000] text-black text-sm font-black hover:bg-yellow-400 active:scale-[0.97] transition-all shadow-md"
+              className="flex-1 py-3 rounded-2xl bg-[#FFD000] text-black text-sm font-black hover:bg-yellow-400 active:scale-[0.97] transition-all shadow-md"
             >
               去看看 →
             </button>

@@ -40,6 +40,7 @@ const Index = () => {
     localStorage.setItem('bb-onboarding-done', '1');
     localStorage.setItem('bb-username',         name);
     localStorage.setItem('bb-remind-mins',      String(mins));
+    sessionStorage.removeItem('bb-notif-shown'); // reset so popup fires for new session
     setOnboardingVisible(false);
   }, []);
 
@@ -203,6 +204,7 @@ const Index = () => {
         {notifVisible && (
           <NotificationModal
             restaurantCount={restaurants.length > 0 ? restaurants.length : 20}
+            remindMins={remindMins}
             onGo={() => { setNotifVisible(false); setActiveTab('map'); }}
             onDismiss={() => setNotifVisible(false)}
           />
