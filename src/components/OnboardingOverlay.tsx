@@ -1,16 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Bell, BookOpen, MapPin, Check, ChevronDown } from 'lucide-react';
-import { CLASSES, curMins } from '@/data/scheduleData';
-
-/** Calculate the clock time when the reminder fires, given remindMins. */
-function getReminderTimeLabel(remindMins: number): string | null {
-  const now = curMins();
-  const cls = CLASSES.find((c) => c.endHour * 60 + c.endMin > now);
-  if (!cls) return null;
-  const fireAt = cls.endHour * 60 + cls.endMin - remindMins;
-  return `${Math.floor(fireAt / 60)}:${String(fireAt % 60).padStart(2, '0')}`;
-}
+import { CLASSES } from '@/data/scheduleData';
 
 interface Props {
   onComplete: (username: string, remindMins: number) => void;
@@ -164,6 +155,70 @@ export default function OnboardingOverlay({ onComplete }: Props) {
           />
         </div>
 
+        {/* ── Import Schedule ──────────────────────────────────────────── */}
+        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3.5">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-8 h-8 bg-[#FFD000]/15 rounded-xl flex items-center justify-center shrink-0">
+                <BookOpen size={14} className="text-[#B8860B]" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold">导入课表</p>
+                <p className="text-[11px] text-muted-foreground truncate">AI 识别校区，自动定位</p>
+              </div>
+            </div>
+            <Toggle checked={uploadSchedule} onChange={setUploadSchedule} />
+          </div>
+        </div>
+
+        {/* Schedule upload area (shown when toggle ON) */}
+        {uploadSchedule && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-2"
+          >
+            {!uploadDone ? (
+              <button
+                onClick={handleUpload}
+                disabled={uploading}
+                className="w-full border-2 border-dashed border-[#FFD000]/60 rounded-2xl p-5 flex flex-col items-center gap-2 hover:bg-[#FFD000]/5 transition-colors disabled:opacity-60"
+              >
+                {uploading ? (
+                  <div className="w-8 h-8 border-[3px] border-[#FFD000] border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <BookOpen size={22} className="text-[#B8860B]" />
+                )}
+                <p className="text-sm font-semibold text-muted-foreground">
+                  {uploading ? 'AI 识别中…' : '点击上传课表截图'}
+                </p>
+                {!uploading && (
+                  <p className="text-xs text-muted-foreground/60">支持截图 / PDF / 照片</p>
+                )}
+              </button>
+            ) : (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-green-600 mb-1">
+                  <Check size={13} /> 识别成功 · {CLASSES.length} 门课程
+                </div>
+                {CLASSES.map((cls) => (
+                  <div key={cls.name} className="flex items-center justify-between bg-secondary rounded-xl px-3 py-2.5">
+                    <div>
+                      <p className="text-xs font-bold">{cls.name}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {`${cls.startHour}:${String(cls.startMin).padStart(2, '0')} – ${cls.endHour}:${String(cls.endMin).padStart(2, '0')}`}
+                      </p>
+                    </div>
+                    <span className="flex items-center gap-0.5 text-[10px] font-bold bg-[#FFD000]/20 text-[#6B4C00] px-2 py-1 rounded-full shrink-0 ml-2">
+                      <MapPin size={8} /> {cls.campus}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+
         {/* ── Enable Reminders — promoted toggle ───────────────────────── */}
         <div className="bg-card border border-border rounded-2xl px-4 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
@@ -228,18 +283,6 @@ export default function OnboardingOverlay({ onComplete }: Props) {
                 className="space-y-2"
               >
                 <WheelPicker value={remindMins} onChange={setRemindMins} />
-                {/* Reminder time preview */}
-                {(() => {
-                  const label = getReminderTimeLabel(remindMins);
-                  return label ? (
-                    <div className="flex items-center justify-center gap-1.5 py-2 bg-orange-50 border border-orange-200 rounded-xl">
-                      <span className="text-base">🔔</span>
-                      <span className="text-xs font-bold text-orange-700">
-                        将在 <span className="text-base font-black">{label}</span> 提醒你出发
-                      </span>
-                    </div>
-                  ) : null;
-                })()}
                 {/* Confirm custom time */}
                 <button
                   onClick={() => setUseCustom(false)}
@@ -252,73 +295,6 @@ export default function OnboardingOverlay({ onComplete }: Props) {
           </motion.div>
         )}
 
-        {/* ── Optional settings ─────────────────────────────────────────── */}
-        <div className="space-y-2">
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">可选设置</p>
-          <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
-            {/* Upload Schedule toggle */}
-            <div className="flex items-center justify-between px-4 py-3.5">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 bg-[#FFD000]/15 rounded-xl flex items-center justify-center shrink-0">
-                  <BookOpen size={14} className="text-[#B8860B]" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">导入课表</p>
-                  <p className="text-[11px] text-muted-foreground truncate">AI 识别校区，自动定位</p>
-                </div>
-              </div>
-              <Toggle checked={uploadSchedule} onChange={setUploadSchedule} />
-            </div>
-          </div>
-        </div>
-
-        {/* Schedule upload area (shown when toggle ON) */}
-        {uploadSchedule && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-2"
-          >
-            {!uploadDone ? (
-              <button
-                onClick={handleUpload}
-                disabled={uploading}
-                className="w-full border-2 border-dashed border-[#FFD000]/60 rounded-2xl p-5 flex flex-col items-center gap-2 hover:bg-[#FFD000]/5 transition-colors disabled:opacity-60"
-              >
-                {uploading ? (
-                  <div className="w-8 h-8 border-[3px] border-[#FFD000] border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <BookOpen size={22} className="text-[#B8860B]" />
-                )}
-                <p className="text-sm font-semibold text-muted-foreground">
-                  {uploading ? 'AI 识别中…' : '点击上传课表截图'}
-                </p>
-                {!uploading && (
-                  <p className="text-xs text-muted-foreground/60">支持截图 / PDF / 照片</p>
-                )}
-              </button>
-            ) : (
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-green-600 mb-1">
-                  <Check size={13} /> 识别成功 · {CLASSES.length} 门课程
-                </div>
-                {CLASSES.map((cls) => (
-                  <div key={cls.name} className="flex items-center justify-between bg-secondary rounded-xl px-3 py-2.5">
-                    <div>
-                      <p className="text-xs font-bold">{cls.name}</p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {`${cls.startHour}:${String(cls.startMin).padStart(2, '0')} – ${cls.endHour}:${String(cls.endMin).padStart(2, '0')}`}
-                      </p>
-                    </div>
-                    <span className="flex items-center gap-0.5 text-[10px] font-bold bg-[#FFD000]/20 text-[#6B4C00] px-2 py-1 rounded-full shrink-0 ml-2">
-                      <MapPin size={8} /> {cls.campus}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </motion.div>
-        )}
 
         {/* ── Confirm & Enter CTA ──────────────────────────────────────── */}
         <button
