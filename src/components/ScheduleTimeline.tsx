@@ -130,8 +130,8 @@ export default function ScheduleTimeline({ isRelocated = false, remindMins }: Pr
           );
         })}
 
-        {/* ── Orange dashed reminder line ──────────────────────────────── */}
-        {reminderPct !== null && (
+        {/* ── Single cursor: reminder time when set, else current time ── */}
+        {reminderPct !== null ? (
           <div
             className="absolute left-9 right-0 flex items-center z-10"
             style={{ top: `${reminderPct}%` }}
@@ -140,16 +140,15 @@ export default function ScheduleTimeline({ isRelocated = false, remindMins }: Pr
             <div className="flex-1 border-t-2 border-dashed border-orange-400 opacity-80" />
             <span className="text-[8px] font-black text-orange-500 tabular-nums ml-1 shrink-0">{reminderLabel}</span>
           </div>
+        ) : (
+          <div
+            className="absolute left-9 right-0 flex items-center z-10"
+            style={{ top: `${currentPercent}%` }}
+          >
+            <div className="w-2 h-2 rounded-full bg-destructive shrink-0 -ml-1" />
+            <div className="flex-1 border-t-2 border-destructive" />
+          </div>
         )}
-
-        {/* ── Red current-time line (fixed demo 12:00) ────────────────── */}
-        <div
-          className="absolute left-9 right-0 flex items-center z-10"
-          style={{ top: `${currentPercent}%` }}
-        >
-          <div className="w-2 h-2 rounded-full bg-destructive shrink-0 -ml-1" />
-          <div className="flex-1 border-t-2 border-destructive" />
-        </div>
       </div>
 
       {/* ── Footer: campus / anchor location ──────────────────────────── */}
