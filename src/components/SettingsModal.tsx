@@ -106,7 +106,6 @@ export default function SettingsModal({ username: initUsername, remindMins: init
   const [useCustom,      setUseCustom]      = useState(false);
   const [confirmedCustom, setConfirmedCustom] = useState(false);
   const [enableNotifs,   setEnableNotifs]   = useState(true);
-  const [uploadSchedule, setUploadSchedule] = useState(false);
   const [uploading,      setUploading]      = useState(false);
   const [uploadDone,     setUploadDone]     = useState(false);
 
@@ -161,65 +160,56 @@ export default function SettingsModal({ username: initUsername, remindMins: init
             />
           </div>
 
-          {/* Import Schedule */}
-          <div className="bg-card border border-border rounded-2xl overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3.5">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 bg-[#FFD000]/15 rounded-xl flex items-center justify-center shrink-0">
-                  <BookOpen size={14} className="text-[#B8860B]" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold">导入课表</p>
-                  <p className="text-[11px] text-muted-foreground truncate">AI 识别校区，自动定位</p>
-                </div>
+          {/* Import Schedule (required) */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 px-1">
+              <div className="w-8 h-8 bg-[#FFD000]/15 rounded-xl flex items-center justify-center shrink-0">
+                <BookOpen size={14} className="text-[#B8860B]" />
               </div>
-              <Toggle checked={uploadSchedule} onChange={setUploadSchedule} />
+              <div>
+                <p className="text-sm font-semibold">导入课表</p>
+                <p className="text-[11px] text-muted-foreground">AI 识别校区，自动定位</p>
+              </div>
             </div>
-          </div>
-
-          {/* Upload area */}
-          {uploadSchedule && (
-            <div className="space-y-2">
-              {!uploadDone ? (
-                <button
-                  onClick={handleUpload}
-                  disabled={uploading}
-                  className="w-full border-2 border-dashed border-[#FFD000]/60 rounded-2xl p-5 flex flex-col items-center gap-2 hover:bg-[#FFD000]/5 transition-colors disabled:opacity-60"
-                >
-                  {uploading ? (
-                    <div className="w-8 h-8 border-[3px] border-[#FFD000] border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <BookOpen size={22} className="text-[#B8860B]" />
-                  )}
-                  <p className="text-sm font-semibold text-muted-foreground">
-                    {uploading ? 'AI 识别中…' : '点击上传课表截图'}
-                  </p>
-                  {!uploading && (
-                    <p className="text-xs text-muted-foreground/60">支持截图 / PDF / 照片</p>
-                  )}
-                </button>
-              ) : (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-green-600 mb-1">
-                    <Check size={13} /> 识别成功 · {CLASSES.length} 门课程
-                  </div>
-                  {CLASSES.map((cls) => (
-                    <div key={cls.name} className="flex items-center justify-between bg-secondary rounded-xl px-3 py-2.5">
-                      <div>
-                        <p className="text-xs font-bold">{cls.name}</p>
-                        <p className="text-[10px] text-muted-foreground">
-                          {`${cls.startHour}:${String(cls.startMin).padStart(2, '0')} – ${cls.endHour}:${String(cls.endMin).padStart(2, '0')}`}
-                        </p>
-                      </div>
-                      <span className="flex items-center gap-0.5 text-[10px] font-bold bg-[#FFD000]/20 text-[#6B4C00] px-2 py-1 rounded-full shrink-0 ml-2">
-                        <MapPin size={8} /> {cls.campus}
-                      </span>
-                    </div>
-                  ))}
+            {!uploadDone ? (
+              <button
+                onClick={handleUpload}
+                disabled={uploading}
+                className="w-full border-2 border-dashed border-[#FFD000]/60 rounded-2xl p-5 flex flex-col items-center gap-2 hover:bg-[#FFD000]/5 transition-colors disabled:opacity-60"
+              >
+                {uploading ? (
+                  <div className="w-8 h-8 border-[3px] border-[#FFD000] border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <BookOpen size={22} className="text-[#B8860B]" />
+                )}
+                <p className="text-sm font-semibold text-muted-foreground">
+                  {uploading ? 'AI 识别中…' : '点击上传课表截图'}
+                </p>
+                {!uploading && (
+                  <p className="text-xs text-muted-foreground/60">支持截图 / PDF / 照片</p>
+                )}
+              </button>
+            ) : (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-green-600 mb-1">
+                  <Check size={13} /> 识别成功 · {CLASSES.length} 门课程
                 </div>
-              )}
-            </div>
-          )}
+                {CLASSES.map((cls) => (
+                  <div key={cls.name} className="flex items-center justify-between bg-secondary rounded-xl px-3 py-2.5">
+                    <div>
+                      <p className="text-xs font-bold">{cls.name}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {`${cls.startHour}:${String(cls.startMin).padStart(2, '0')} – ${cls.endHour}:${String(cls.endMin).padStart(2, '0')}`}
+                      </p>
+                    </div>
+                    <span className="flex items-center gap-0.5 text-[10px] font-bold bg-[#FFD000]/20 text-[#6B4C00] px-2 py-1 rounded-full shrink-0 ml-2">
+                      <MapPin size={8} /> {cls.campus}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Enable Reminders */}
           <div className="bg-card border border-border rounded-2xl px-4 py-3.5 flex items-center justify-between">
